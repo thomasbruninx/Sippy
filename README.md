@@ -43,7 +43,7 @@ Tap the **Registration failed** banner to see the response code and reason repor
 
 Contacts can come from the Android address book, manually added local entries, a file import, and a synced CSV URL. Use the source and sort menus to filter or sort each phonebook. Name search is case-insensitive and number search ignores common number formatting. On-device additions do not write to the Android address book or to the remote CSV.
 
-Import an UTF-8 file from **Contacts** or **Settings → Phonebook**. Each file replaces the imported directory when validated successfully. A hosted CSV can use HTTP or HTTPS. Use HTTPS for private directories. Android can defer automatic sync based on network and battery constraints. The last successful directory remains available if a sync attempt fails.
+Import a UTF-8 file from **Settings → Phonebook → Import a CSV file**. Each file replaces the imported directory when validated successfully. Use **Export local contacts to CSV** on the same settings page to save only contacts created in Sippy's Local phonebook, with name and number columns. Phone, imported, and synced contacts are excluded. A hosted CSV can use HTTP or HTTPS. Use HTTPS for private directories. Android can defer automatic sync based on network and battery constraints. The last successful directory remains available if a sync attempt fails.
 
 ```csv
 name,number
@@ -70,4 +70,8 @@ See the [Linphone codec documentation](https://wiki.linphone.org/xwiki/wiki/publ
 
 Open **Settings → Event log** to filter Info, Warning, Error, and SIP signaling entries. Tap a row for details. Sippy keeps events for 3 days by default, with a configurable limit of 1 to 30 days. SIP records include the request or response line and selected headers. Authentication headers and message bodies are excluded from the saved log.
 
-Open **History** for call direction, outcome, start time, and duration. Use **Redial** to confirm a new call to the saved number or SIP address. Call history is stored separately from the event log retention setting.
+Open **History** for call direction, outcome, start time, and duration. Use **Redial** to confirm a new call to the saved number or SIP address. **Clear history**, next to the title, asks for confirmation before permanently removing the saved history. Cleared records stay cleared when the SIP engine reconnects. Event logs and contacts are unaffected.
+
+During earpiece calls, supported phones use their proximity sensor to turn the display off and block accidental face touches. Moving the phone away restores the display. Speakerphone and headset routes do not enable this protection; ending the call releases it. No camera permission is required.
+
+Version 1.1.6 supports Android 9 and later, including the Galaxy A6+ on Android 10, with a separate ARM64 build for modern phones.

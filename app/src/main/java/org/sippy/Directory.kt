@@ -28,6 +28,14 @@ internal enum class Sort(val label: String) {
 internal data class Entry(val id: String, val name: String, val number: String, val source: Source)
 internal data class DirectoryConfig(val url: String, val minutes: Int, val revision: Int)
 
+internal fun localContactsCsv(entries: List<Entry>): String = buildString {
+    append("name,number\r\n")
+    fun quoted(value: String) = "\"${value.replace("\"", "\"\"")}\""
+    entries.filter { it.source == Source.LOCAL }.forEach {
+        append(quoted(it.name)).append(',').append(quoted(it.number)).append("\r\n")
+    }
+}
+
 internal val directoryExecutor = Executors.newSingleThreadExecutor()
 
 internal class Directory(private val context: Context) {

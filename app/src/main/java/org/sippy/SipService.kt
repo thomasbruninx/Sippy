@@ -89,6 +89,7 @@ class SipService : Service() {
     private var availableCodecs = emptySet<String>()
     private var pending: AfterHold? = null
     private val incomingRingtone by lazy { IncomingRingtone(this) }
+    private val callProximity by lazy { CallProximity(this) }
 
     private data class AfterHold(val line: Long, val action: () -> Unit, val timeout: Runnable)
 
@@ -98,6 +99,17 @@ class SipService : Service() {
     internal var onMessage: ((String) -> Unit)? = null
 
     private val listener = object : CoreListenerStub() {
+        override fun onAudioDeviceChanged(core: Core, audioDevice: AudioDevice) {
+            handler.post {
+                if (this@SipService.core?.nativePointer == core.nativePointer) publish()
+            }
+        }
+
+        override fun onAudioDevicesListUpdated(core: Core) {
+            handler.post {
+                if (this@SipService.core?.nativePointer == core.nativePointer) publish()
+            }
+        }
         override fun onAccountRegistrationStateChanged(core: Core, account: Account, state: RegistrationState, message: String) {
             val failure = if (state == RegistrationState.Failed) {
                 val error = account.errorInfo
@@ -201,6 +213,7 @@ class SipService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        callProximity.release()
         incomingRingtone.stop()
         notifications.cancel(INCOMING_ID)
         core?.let { engine -> engine.removeListener(listener); engine.stop() }
@@ -233,7 +246,7 @@ class SipService : Service() {
             val engine = f.createCore(null, null, applicationContext)
             initialized = engine
             core = engine
-            engine.setUserAgent("Sippy", "1.1.5")
+            engine.setUserAgent("Sippy", "1.1.6")
             engine.setMaxCalls(4)
             engine.setKeepAliveEnabled(true)
             engine.setAutoIterateEnabled(true)
@@ -618,6 +631,10 @@ class SipService : Service() {
     }
 
     private fun publish() {
+        callProximity.update(calls().any { call ->
+            phase(call.state) in setOf(Phase.DIALING, Phase.RINGING, Phase.CONNECTING, Phase.ACTIVE, Phase.REMOTE_HOLD) &&
+                (call.outputAudioDevice ?: core?.outputAudioDevice)?.type == AudioDevice.Type.Earpiece
+        })
         val lines = calls().map { call ->
             val address = call.remoteAddress
             val number = address.username ?: address.asStringUriOnly()

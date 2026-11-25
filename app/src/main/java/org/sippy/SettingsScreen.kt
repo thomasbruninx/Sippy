@@ -258,8 +258,10 @@ internal class SettingsScreen(private val activity: MainActivity) {
     }
 
     private fun phonebook(content: LinearLayout) = with(content) {
-        addView(ui.heading("CSV phonebook", "Import a file or automatically sync a hosted directory."))
+        addView(ui.heading("CSV phonebook", "Import a file, export local contacts, or sync a hosted directory."))
         addView(ui.action("Import a CSV file", "plus", Palette.surface, outlined = true, click = activity::importCsv))
+        addView(ui.action("Export local contacts to CSV", fill = Palette.surface, outlined = true,
+            click = activity.settingsFiles::exportLocalContacts))
         val config = activity.directory.config()
         val url = addField("CSV URL", config.url, uriType, "https://pbx.example.com/phonebook.csv")
         val interval = addField("Sync interval (minutes)", config.minutes.toString(), InputType.TYPE_CLASS_NUMBER)

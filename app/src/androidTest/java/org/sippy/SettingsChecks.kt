@@ -48,10 +48,12 @@ class SettingsChecks : Instrumentation() {
             }
             rejects { it.remove("account") }
             check(runCatching { SipSettingsJson.decode("not json") }.isFailure)
+            HistoryCsvChecks(this).run()
+            ProximityChecks(this).run()
             AppearanceChecks(this).run()
             IncomingCallChecks(this).run()
             checkAudioImport()
-            result.putString("stream", "Passed: incoming calls and notification Decline with the activity fully closed, background availability after calls, notification Accept, live calls across theme changes, appearance, JSON, audio import, and preview playback.\n")
+            result.putString("stream", "Passed: durable history clearing and database upgrade, local-only CSV round trip, closed-app calls, background availability, notification actions, themes, JSON, audio import, and preview playback.\n")
             finish(Activity.RESULT_OK, result)
         } catch (failure: Throwable) {
             result.putString("stream", "FAILED: ${failure.javaClass.simpleName}: ${failure.message}\n")

@@ -64,6 +64,9 @@ internal class SettingsFiles(private val activity: MainActivity) {
             .putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/json", "text/plain", "application/octet-stream")), IMPORT)
     }
 
+    fun exportLocalContacts() = open(document(Intent.ACTION_CREATE_DOCUMENT, "text/csv")
+        .putExtra(Intent.EXTRA_TITLE, "Sippy-local-contacts.csv"), LOCAL_EXPORT)
+
     @Suppress("DEPRECATION")
     private fun open(intent: Intent, code: Int) {
         runCatching { activity.startActivityForResult(intent, code) }
@@ -74,7 +77,7 @@ internal class SettingsFiles(private val activity: MainActivity) {
 
     @Suppress("DEPRECATION")
     fun result(code: Int, result: Int, data: Intent?): Boolean {
-        if (code !in setOf(RINGTONE, AUDIO, EXPORT, IMPORT)) return false
+        if (code !in setOf(RINGTONE, AUDIO, EXPORT, IMPORT, LOCAL_EXPORT)) return false
         if (result != Activity.RESULT_OK) return true
         if (code == RINGTONE) {
             val uri = data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI) ?: return true
@@ -84,6 +87,15 @@ internal class SettingsFiles(private val activity: MainActivity) {
         }
         val uri = data?.data ?: return true
         when (code) {
+            LOCAL_EXPORT -> work("Could not export local contacts.") {
+                val entries = activity.directory.stored(Source.LOCAL)
+                val csv = localContactsCsv(entries)
+                requireNotNull(activity.contentResolver.openOutputStream(uri, "wt")).use {
+                    it.write(csv.toByteArray(Charsets.UTF_8))
+                }
+                val finish: () -> Unit = { activity.message("Exported ${entries.size} local contacts.") }
+                finish
+            }
             AUDIO -> importAudio(uri)
             EXPORT -> {
                 val json = SipSettingsJson.encode(prefs.profile(), prefs.codecs(), includePassword)
@@ -198,5 +210,6 @@ internal class SettingsFiles(private val activity: MainActivity) {
         private const val AUDIO = 41
         private const val EXPORT = 42
         private const val IMPORT = 43
+        private const val LOCAL_EXPORT = 44
     }
 }

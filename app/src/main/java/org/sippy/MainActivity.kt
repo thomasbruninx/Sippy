@@ -767,10 +767,7 @@ class MainActivity : ComponentActivity() {
 
     private fun contacts() = padded(10).apply {
         addView(ui.heading("Contacts", "Phone contacts and your own SIP directories."))
-        val actions = ui.row(8)
-        actions.addView(ui.action("Add contact", "plus") { editContact(null) }, ui.weight())
-        actions.addView(ui.action("Import CSV", fill = Palette.surface, outlined = true, click = ::importCsv), ui.weight())
-        addView(actions)
+        addView(ui.action("Add contact", "plus") { editContact(null) })
         val directoryView = directoryView(query, source, { item ->
             if (item.source == Source.LOCAL) localContactMenu(item) else confirmDial(item.number, item.name)
         }, { query = it }, { source = it })

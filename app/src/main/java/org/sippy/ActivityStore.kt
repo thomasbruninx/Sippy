@@ -28,8 +28,8 @@ internal data class HistoryRecord(
     val name: String, val address: String, val seconds: Int
 )
 
-internal class ActivityStore private constructor(private val context: Context) {
-    private val db = object : SQLiteOpenHelper(context, "activity.db", null, 1) {
+internal class ActivityStore(private val context: Context, databaseName: String = "activity.db") {
+    private val db = object : SQLiteOpenHelper(context, databaseName, null, 2) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE events (id INTEGER PRIMARY KEY, time INTEGER NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL)")
             db.execSQL("CREATE INDEX event_time ON events(time)")
@@ -37,8 +37,11 @@ internal class ActivityStore private constructor(private val context: Context) {
             db.execSQL("""CREATE TABLE history (id TEXT PRIMARY KEY, time INTEGER NOT NULL, incoming INTEGER NOT NULL,
                 outcome TEXT NOT NULL, name TEXT NOT NULL, address TEXT NOT NULL, seconds INTEGER NOT NULL)""")
             db.execSQL("CREATE INDEX history_time ON history(time)")
+            db.execSQL("CREATE TABLE cleared_history (id TEXT PRIMARY KEY)")
         }
-        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            if (oldVersion < 2) db.execSQL("CREATE TABLE IF NOT EXISTS cleared_history (id TEXT PRIMARY KEY)")
+        }
     }
     private val executor = Executors.newSingleThreadExecutor()
     private val prefs = Preferences(context).data
@@ -65,6 +68,11 @@ internal class ActivityStore private constructor(private val context: Context) {
     }
 
     fun record(call: HistoryRecord) = submit {
+        // Linphone can replay its saved call logs after reconnecting. Never restore
+        // records the user has explicitly cleared from Sippy's history.
+        db.readableDatabase.rawQuery("SELECT 1 FROM cleared_history WHERE id = ?", arrayOf(call.id)).use {
+            if (it.moveToFirst()) return@submit
+        }
         db.writableDatabase.replaceOrThrow("history", null, ContentValues().apply {
             put("id", call.id)
             put("time", call.time)
@@ -74,6 +82,16 @@ internal class ActivityStore private constructor(private val context: Context) {
             put("address", call.address)
             put("seconds", call.seconds)
         })
+    }
+
+    fun clearHistory(result: (Result<Unit>) -> Unit) = read(result) {
+        val database = db.writableDatabase
+        database.beginTransaction()
+        try {
+            database.execSQL("INSERT OR IGNORE INTO cleared_history (id) SELECT id FROM history")
+            database.delete("history", null, null)
+            database.setTransactionSuccessful()
+        } finally { database.endTransaction() }
     }
 
     fun events(filter: EventKind?, limit: Int, result: (Result<List<EventRecord>>) -> Unit) = read(result) {

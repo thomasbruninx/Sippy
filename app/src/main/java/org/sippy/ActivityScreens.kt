@@ -41,6 +41,31 @@ internal class ActivityScreens(private val activity: MainActivity) {
                 }
             }
         }
+        val heading = page.root.getChildAt(0)
+        page.root.removeView(heading)
+        val clear = ui.action("Clear history", fill = Palette.surface, outlined = true) {}
+        clear.setOnClickListener {
+            AlertDialog.Builder(activity).setTitle("Clear call history?")
+                .setMessage("Permanently delete all saved call history? This cannot be undone.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Clear history") { _, _ ->
+                    clear.isEnabled = false
+                    store.clearHistory { result ->
+                        if (!activity.isDestroyed) {
+                            clear.isEnabled = true
+                            result.onSuccess {
+                                if (page.root.isAttachedToWindow) page.reset()
+                                activity.message("Call history cleared.")
+                            }.onFailure { activity.message("Could not clear call history. Please try again.") }
+                        }
+                    }
+                }.show()
+        }
+        page.root.addView(ui.row(8).apply {
+            gravity = Gravity.TOP
+            addView(heading, ui.weight())
+            addView(clear)
+        }, 0)
         return page.root
     }
 

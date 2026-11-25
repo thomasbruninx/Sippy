@@ -5,6 +5,8 @@ import android.app.NotificationManager
 import android.content.Intent
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.os.PowerManager
+import org.linphone.core.AudioDevice
 import android.os.ParcelFileDescriptor
 import android.os.Build
 import org.linphone.core.Core
@@ -55,6 +57,11 @@ internal class IncomingCallChecks(private val instrumentation: Instrumentation) 
             val alert = alertGetter.invoke(service) as IncomingRingtone
             (playerField.get(alert) as? MediaPlayer)?.isPlaying == true
         }
+        fun proximityHeld() = main {
+            val proximity = SipService::class.java.getDeclaredMethod("getCallProximity").apply { isAccessible = true }.invoke(service)
+            val lock = CallProximity::class.java.getDeclaredField("lock").apply { isAccessible = true }.get(proximity) as? PowerManager.WakeLock
+            lock?.isHeld == true
+        }
         try {
             main {
                 prefs.save(SipProfile(username = "ring-check", domain = "127.0.0.1", register = false))
@@ -69,8 +76,8 @@ internal class IncomingCallChecks(private val instrumentation: Instrumentation) 
                 if (index == 3) {
                     main { activity.finish() }
                     await("The call screen did not close") { main { activity.isDestroyed } }
-                    check(activity.getSystemService(NotificationManager::class.java).activeNotifications.any { it.id == 900 }) {
-                        "Call availability stopped when the activity was closed"
+                    await("Call availability stopped when the activity was closed") {
+                        activity.getSystemService(NotificationManager::class.java).activeNotifications.any { it.id == 900 }
                     }
                 }
                 main { prefs.vibrateOnIncoming = vibrate }
@@ -116,6 +123,16 @@ internal class IncomingCallChecks(private val instrumentation: Instrumentation) 
                             main { service.state.lines.any { it.id == incomingId && it.phase == Phase.ACTIVE } }
                         }
                         check(!playing() && !vibrationActive()) { "Alerts continued after accepting" }
+                        val earpiece = main { (coreField.get(service) as Core).extendedAudioDevices.firstOrNull { it.type == AudioDevice.Type.Earpiece } }
+                        if (earpiece != null && activity.getSystemService(PowerManager::class.java)
+                                .isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) {
+                            main { (coreField.get(service) as Core).calls.first().setOutputAudioDevice(earpiece) }
+                            await("Earpiece call did not enable proximity protection", ::proximityHeld)
+                            main { service.speaker(incomingId) }
+                            await("Speakerphone did not release proximity protection") { !proximityHeld() }
+                            main { service.speaker(incomingId) }
+                            await("Returning to the earpiece did not restore proximity protection", ::proximityHeld)
+                        }
                         val originalAppearance = prefs.appearance
                         val connectedCore = main { (coreField.get(service) as Core).nativePointer }
                         try {
@@ -136,10 +153,11 @@ internal class IncomingCallChecks(private val instrumentation: Instrumentation) 
                     if (index == 3) notification.actions.first { it.title.toString() == "Decline" }.actionIntent.send()
                     else main { service.end(incomingId) }
                     await("Declined call did not end") { main { service.state.lines.isEmpty() } }
+                    check(!proximityHeld()) { "Ending the call did not release proximity protection" }
                     check(!playing()) { "Ringtone continued after declining the call" }
                     await("Vibration continued after declining the call") { !vibrationActive() }
-                    check(activity.getSystemService(NotificationManager::class.java).activeNotifications.any { it.id == 900 }) {
-                        "Ending the call stopped background availability"
+                    await("Ending the call stopped background availability") {
+                        activity.getSystemService(NotificationManager::class.java).activeNotifications.any { it.id == 900 }
                     }
                     if (Build.VERSION.SDK_INT >= 34) {
                         val serviceDump = ParcelFileDescriptor.AutoCloseInputStream(
