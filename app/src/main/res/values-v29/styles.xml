@@ -1,0 +1,8 @@
+<resources>
+    <style name="SippyTheme" parent="SippyLightThemeBase">
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+    <style name="SippyDarkTheme" parent="SippyDarkThemeBase">
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+</resources>

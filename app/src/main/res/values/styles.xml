@@ -1,0 +1,25 @@
+<resources>
+    <color name="sippy_icon_background">#FAEEE0</color>
+    <style name="SippyLightThemeBase" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#146456</item>
+        <item name="android:windowBackground">#F4F7F3</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:statusBarColor">#F4F7F3</item>
+        <item name="android:navigationBarColor">#FAFCF8</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <style name="SippyDarkThemeBase" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#87D4B3</item>
+        <item name="android:windowBackground">#111916</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:statusBarColor">#111916</item>
+        <item name="android:navigationBarColor">#1A2520</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <style name="SippyTheme" parent="SippyLightThemeBase" />
+    <style name="SippyDarkTheme" parent="SippyDarkThemeBase" />
+</resources>

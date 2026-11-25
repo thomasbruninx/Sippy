@@ -1,0 +1,29 @@
+# Gradle, Kotlin, and Android build outputs
+.gradle/
+.kotlin/
+build/
+.cxx/
+.externalNativeBuild/
+*.apk
+*.aab
+*.apks
+
+# Android Studio and local SDK settings
+.idea/
+*.iml
+captures/
+local.properties
+
+# Local signing credentials and SDK overrides
+keystore.properties
+signing.properties
+*.jks
+*.keystore
+*.aar
+
+# Workspace artifacts
+/generated_images/
+/Sippy.zip
+/Sippy-updating.zip
+.DS_Store
+Thumbs.db

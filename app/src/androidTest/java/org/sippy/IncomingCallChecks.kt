@@ -1,0 +1,142 @@
+package org.sippy
+
+import android.app.Instrumentation
+import android.app.NotificationManager
+import android.content.Intent
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.os.ParcelFileDescriptor
+import org.linphone.core.Core
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.util.UUID
+
+/** Local SIP INVITEs exercise the real service's incoming-call alert path. */
+internal class IncomingCallChecks(private val instrumentation: Instrumentation) {
+    private fun <T> main(action: () -> T): T {
+        var result: T? = null
+        instrumentation.runOnMainSync { result = action() }
+        @Suppress("UNCHECKED_CAST")
+        return result as T
+    }
+
+    private fun await(label: String, condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + 10000
+        while (!condition() && System.currentTimeMillis() < deadline) Thread.sleep(25)
+        check(condition()) { label }
+    }
+
+    private fun vibrationActive(): Boolean {
+        val dump = ParcelFileDescriptor.AutoCloseInputStream(
+            instrumentation.uiAutomation.executeShellCommand("dumpsys vibrator_manager")
+        ).bufferedReader().use { it.readText() }
+        val current = dump.substringAfter("CurrentVibration:", "").substringBefore("NextVibration:")
+        return current.contains("org.sippy")
+    }
+
+    fun run() {
+        val activity = instrumentation.startActivitySync(Intent(instrumentation.targetContext, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        await("SIP service did not bind") { main { activity.sip != null } }
+        val service = main { activity.sip!! }
+        check(main { service.state.lines.isEmpty() }) { "End calls before running local SIP checks" }
+        check(activity.getSystemService(AudioManager::class.java).ringerMode == AudioManager.RINGER_MODE_NORMAL)
+        val prefs = activity.prefs
+        val originalProfile = prefs.profile()
+        val originalUri = prefs.data.getString("ringtoneUri", null)
+        val originalVibrate = prefs.data.getBoolean("vibrateOnIncoming", false)
+        val coreField = SipService::class.java.getDeclaredField("core").apply { isAccessible = true }
+        val playerField = IncomingRingtone::class.java.getDeclaredField("player").apply { isAccessible = true }
+        val alertGetter = SipService::class.java.getDeclaredMethod("getIncomingRingtone").apply { isAccessible = true }
+        fun playing() = main {
+            val alert = alertGetter.invoke(service) as IncomingRingtone
+            (playerField.get(alert) as? MediaPlayer)?.isPlaying == true
+        }
+        try {
+            main {
+                prefs.save(SipProfile(username = "ring-check", domain = "127.0.0.1", register = false))
+                prefs.data.edit().remove("ringtoneUri").apply()
+                service.configure()
+            }
+            val port = main { (coreField.get(service) as Core).transportsUsed.udpPort }
+            check(port > 0)
+            val loopback = InetAddress.getByName("127.0.0.1")
+            for ((index, vibrate) in listOf(false, true, false).withIndex()) {
+                main { prefs.vibrateOnIncoming = vibrate }
+                DatagramSocket(0, loopback).use { socket ->
+                    val id = UUID.randomUUID().toString()
+                    val body = listOf("v=0", "o=alert-check 1 1 IN IP4 127.0.0.1", "s=Local alert check",
+                        "c=IN IP4 127.0.0.1", "t=0 0", "m=audio 19000 RTP/AVP 0", "a=rtpmap:0 PCMU/8000", "a=sendrecv", "")
+                        .joinToString("\r\n")
+                    val invite = listOf("INVITE sip:ring-check@127.0.0.1:$port SIP/2.0",
+                        "Via: SIP/2.0/UDP 127.0.0.1:${socket.localPort};branch=z9hG4bK$id;rport",
+                        "Max-Forwards: 70", "From: <sip:alert-check@127.0.0.1>;tag=$id",
+                        "To: <sip:ring-check@127.0.0.1>", "Call-ID: $id", "CSeq: 1 INVITE",
+                        "Contact: <sip:alert-check@127.0.0.1:${socket.localPort}>",
+                        "Content-Type: application/sdp", "Content-Length: ${body.toByteArray().size}", "", body)
+                        .joinToString("\r\n").toByteArray()
+                    socket.send(DatagramPacket(invite, invite.size, loopback, port))
+                    await("Local INVITE did not reach the incoming-call screen") {
+                        main { service.state.lines.any { it.phase == Phase.INCOMING } }
+                    }
+                    await("Default ringtone did not play on an incoming call", ::playing)
+                    check(vibrationActive() == vibrate) { "Incoming vibration did not match its setting" }
+                    val incomingId = main { service.state.lines.first { it.phase == Phase.INCOMING }.id }
+                    val notification = activity.getSystemService(NotificationManager::class.java).activeNotifications
+                        .first { it.id == 901 }.notification
+                    check(notification.actions.map { it.title.toString() } == listOf("Accept", "Decline"))
+                    if (index == 2) {
+                        notification.actions.first { it.title.toString() == "Accept" }.actionIntent.send()
+                        socket.soTimeout = 10000
+                        var acceptedResponse: String
+                        do {
+                            val packet = DatagramPacket(ByteArray(8192), 8192)
+                            socket.receive(packet)
+                            acceptedResponse = String(packet.data, 0, packet.length)
+                        } while (!acceptedResponse.startsWith("SIP/2.0 200 "))
+                        val to = acceptedResponse.lineSequence().first { it.startsWith("To:", true) }.trim()
+                        val ack = listOf("ACK sip:ring-check@127.0.0.1:$port SIP/2.0",
+                            "Via: SIP/2.0/UDP 127.0.0.1:${socket.localPort};branch=z9hG4bK$id-ack;rport",
+                            "Max-Forwards: 70", "From: <sip:alert-check@127.0.0.1>;tag=$id", to,
+                            "Call-ID: $id", "CSeq: 1 ACK", "Content-Length: 0", "", "")
+                            .joinToString("\r\n").toByteArray()
+                        socket.send(DatagramPacket(ack, ack.size, loopback, port))
+                        await("Notification Accept did not connect the call") {
+                            main { service.state.lines.any { it.id == incomingId && it.phase == Phase.ACTIVE } }
+                        }
+                        check(!playing() && !vibrationActive()) { "Alerts continued after accepting" }
+                        val originalAppearance = prefs.appearance
+                        val connectedCore = main { (coreField.get(service) as Core).nativePointer }
+                        try {
+                            for (appearance in listOf(Appearance.DARK, Appearance.LIGHT, Appearance.SYSTEM)) {
+                                main { activity.setAppearance(appearance) }
+                                Thread.sleep(150)
+                                main {
+                                    check(activity.sip === service && (coreField.get(service) as Core).nativePointer == connectedCore)
+                                    check(service.state.lines.any { it.id == incomingId && it.phase == Phase.ACTIVE }) {
+                                        "Changing appearance disconnected the call"
+                                    }
+                                }
+                            }
+                        } finally {
+                            main { activity.setAppearance(originalAppearance) }
+                        }
+                    }
+                    main { service.end(incomingId) }
+                    await("Declined call did not end") { main { service.state.lines.isEmpty() } }
+                    check(!playing()) { "Ringtone continued after declining the call" }
+                    await("Vibration continued after declining the call") { !vibrationActive() }
+                }
+            }
+        } finally {
+            main {
+                service.state.lines.forEach { service.end(it.id) }
+                prefs.save(originalProfile)
+                prefs.data.edit().putString("ringtoneUri", originalUri).putBoolean("vibrateOnIncoming", originalVibrate).apply()
+                service.configure()
+                activity.finish()
+            }
+        }
+    }
+}
