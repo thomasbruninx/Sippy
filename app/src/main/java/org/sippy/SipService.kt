@@ -81,6 +81,7 @@ class SipService : Service() {
     private var transferPending: Long? = null
     private var transferTimeout: Runnable? = null
     private var activeNotification = false
+    private var microphoneForeground = false
     private var lastNotification: Triple<String, String, Boolean>? = null
     private var status = "Starting SIP"
     private var registrationDetail: String? = null
@@ -178,10 +179,12 @@ class SipService : Service() {
         activityStore.schedulePruning()
         activityStore.prune()
         notifications.createNotificationChannel(NotificationChannel(ACTIVE_CHANNEL, "Active SIP calls", NotificationManager.IMPORTANCE_LOW))
+        notifications.createNotificationChannel(NotificationChannel(AVAILABILITY_CHANNEL, "Background call availability", NotificationManager.IMPORTANCE_LOW))
         notifications.createNotificationChannel(NotificationChannel(INCOMING_CHANNEL, "Incoming SIP calls", NotificationManager.IMPORTANCE_HIGH).apply {
             setSound(null, null)
             enableVibration(false)
         })
+        if (prefs.keepAvailable) promoteForeground(availabilityNotification(), microphone = false)
         configure()
     }
 
@@ -191,9 +194,9 @@ class SipService : Service() {
         if (intent?.action == END_ACTION) {
             val id = intent.getLongExtra("line", 0)
             end(id)
-            if (!activeNotification) stopSelf()
         }
-        return START_NOT_STICKY
+        if (!prefs.keepAvailable && calls().isEmpty()) stopSelf()
+        return if (prefs.keepAvailable || calls().isNotEmpty()) START_STICKY else START_NOT_STICKY
     }
 
     override fun onDestroy() {
@@ -232,6 +235,8 @@ class SipService : Service() {
             core = engine
             engine.setUserAgent("Sippy", "1.1.5")
             engine.setMaxCalls(4)
+            engine.setKeepAliveEnabled(true)
+            engine.setAutoIterateEnabled(true)
             engine.setVideoCaptureEnabled(false)
             engine.setVideoDisplayEnabled(false)
             engine.setEchoCancellationEnabled(profile.echoCancellation)
@@ -302,6 +307,18 @@ class SipService : Service() {
             status = if (it is LinkageError) "SIP engine unavailable" else "SIP setup failed"
             registrationDetail = it.localizedMessage ?: "Unknown SIP setup error."
             activityStore.event(EventKind.ERROR, "$status · $registrationDetail", logSecret)
+        }
+        updateBackgroundAvailability()
+    }
+
+    internal fun updateBackgroundAvailability() {
+        if (prefs.keepAvailable) {
+            if (!activeNotification) promoteForeground(availabilityNotification(), microphone = false)
+            // A started service survives the activity's final unbind and task dismissal.
+            startService(Intent(this, SipService::class.java).setAction(KEEP_AVAILABLE))
+        } else if (calls().isEmpty()) {
+            removeForeground()
+            stopSelf()
         }
         publish()
     }
@@ -589,10 +606,13 @@ class SipService : Service() {
                 ?: current.firstOrNull()?.nativePointer
         }
         if (current.isEmpty() && activeNotification) {
-            activeNotification = false
             lastNotification = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            if (prefs.keepAvailable) {
+                if (microphoneForeground) promoteForeground(availabilityNotification(), microphone = false)
+            } else {
+                removeForeground()
+                stopSelf()
+            }
         }
         publish()
     }
@@ -607,12 +627,12 @@ class SipService : Service() {
         state = SipState(status, ready, lines, selected, consultation, availableCodecs,
             pending != null || transferPending != null, registrationDetail)
         if (activeNotification) {
-            val line = lines.firstOrNull { it.id == selected } ?: lines.firstOrNull()
-            val signature = Triple(line?.name ?: "Starting call", line?.phase?.label ?: "Connecting", line != null)
+            val line = if (microphoneForeground) lines.firstOrNull { it.id == selected } ?: lines.firstOrNull() else null
+            val signature = Triple(line?.name ?: "Call availability", line?.phase?.label ?: status, line != null)
             if (lastNotification != signature || line?.id != notifiedLine) {
                 lastNotification = signature
                 notifiedLine = line?.id
-                notifications.notify(ACTIVE_ID, notification(line, false))
+                notifications.notify(ACTIVE_ID, if (line != null) notification(line, false) else availabilityNotification())
             }
         }
         val ringing = lines.firstOrNull { it.phase == Phase.INCOMING }
@@ -661,20 +681,45 @@ class SipService : Service() {
     }
 
     private fun ensureForeground() {
-        if (activeNotification) return
+        if (microphoneForeground) return
         check(checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             "Microphone permission is required."
         }
         startService(Intent(this, SipService::class.java))
         try {
-            val notification = notification(null, false)
-            if (Build.VERSION.SDK_INT >= 30) startForeground(ACTIVE_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-            else startForeground(ACTIVE_ID, notification)
-            activeNotification = true
+            promoteForeground(notification(null, false), microphone = true)
         } catch (error: Exception) {
-            stopSelf()
+            if (!activeNotification) stopSelf()
             throw error
         }
+    }
+
+    private fun promoteForeground(notification: Notification, microphone: Boolean) {
+        val type = (if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0) or
+            (if (microphone && Build.VERSION.SDK_INT >= 30) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0)
+        if (Build.VERSION.SDK_INT >= 29) startForeground(ACTIVE_ID, notification, type)
+        else startForeground(ACTIVE_ID, notification)
+        activeNotification = true
+        microphoneForeground = microphone
+    }
+
+    private fun removeForeground() {
+        if (activeNotification) stopForeground(STOP_FOREGROUND_REMOVE)
+        activeNotification = false
+        microphoneForeground = false
+        lastNotification = null
+    }
+
+    private fun availabilityNotification(): Notification {
+        val open = PendingIntent.getActivity(this, 4, Intent(this, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        return Notification.Builder(this, AVAILABILITY_CHANNEL)
+            .setSmallIcon(R.drawable.ic_call_notification)
+            .setContentTitle("Sippy · Incoming calls enabled")
+            .setContentText("$status · Tap to open Sippy")
+            .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
+            .setVisibility(Notification.VISIBILITY_PRIVATE).setCategory(Notification.CATEGORY_SERVICE).build()
     }
 
     private inline fun command(action: () -> Unit) {
@@ -689,8 +734,10 @@ class SipService : Service() {
     companion object {
         const val OPEN_CALL = "org.sippy.OPEN_CALL"
         const val ACCEPT_CALL = "org.sippy.ACCEPT_CALL"
+        const val KEEP_AVAILABLE = "org.sippy.KEEP_AVAILABLE"
         private const val END_ACTION = "org.sippy.END_CALL"
         private const val ACTIVE_CHANNEL = "sippy.active"
+        private const val AVAILABILITY_CHANNEL = "sippy.availability"
         private const val INCOMING_CHANNEL = "sippy.incoming.v2"
         private const val ACTIVE_ID = 900
         private const val INCOMING_ID = 901

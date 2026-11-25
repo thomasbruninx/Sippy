@@ -67,6 +67,17 @@ internal data class Codec(val id: String, val label: String, val enabled: Boolea
 internal class Preferences(context: Context) {
     val data = context.getSharedPreferences("sippy", Context.MODE_PRIVATE)
 
+    var backgroundCalling: Boolean
+        get() = data.getBoolean("backgroundCalling", true)
+        set(value) { data.edit().putBoolean("backgroundCalling", value).apply() }
+
+    var startOnBoot: Boolean
+        get() = data.getBoolean("startOnBoot", true)
+        set(value) { data.edit().putBoolean("startOnBoot", value).apply() }
+
+    val keepAvailable: Boolean get() = backgroundCalling &&
+        !data.getString("username", "").isNullOrBlank() && !data.getString("domain", "").isNullOrBlank()
+
     var appearance: Appearance
         get() = Appearance.entries.firstOrNull { it.name == data.getString("appearance", null) } ?: Appearance.SYSTEM
         set(value) { data.edit().putString("appearance", value.name).apply() }

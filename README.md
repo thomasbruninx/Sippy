@@ -19,7 +19,13 @@ Sippy supports Android 9 and later through its minimum SDK of 28. It targets And
 3. Dial an extension or SIP URI, or select a contact and confirm the call. Grant microphone access for calls and notifications for a tap-to-return call alert. Sippy requests microphone, contacts, and supported notification permissions on first launch. Use **Settings → Application → Check permissions** to request missing permissions again or open Android settings when required.
 4. During a call, use **Hold / Resume**, **Keypad**, **Mute**, **Speaker**, **New call**, or **Transfer**. A new call pauses the active line. Tap a held line to switch to it. **Direct transfer** sends a SIP REFER, and **Ask first** calls the destination before you tap **Complete**. The PBX must support the selected DTMF method and SIP transfer (including REFER with Replaces for attended transfer).
 
-Active calls use a foreground microphone service and can continue when you switch apps. Tap the ongoing notification to return to the call. Incoming call notifications include **Accept** and **Decline** actions. Accept opens the call screen and answers after microphone permission is granted, if needed. Idle incoming calls can ring while Sippy's SIP service is running. Incoming push and wake-up after the app has been stopped require separate provider-side integration.
+Active calls use a foreground microphone service and can continue when you switch apps. Tap the ongoing notification to return to the call. Incoming call notifications include **Accept** and **Decline** actions. Accept opens the call screen and answers after microphone permission is granted, if needed.
+
+## Background incoming calls
+
+**Settings → Application → Background calls** controls reception after closing the app and startup after a phone restart. Both options are on by default once an account is saved. A persistent notification keeps the SIP connection available when the activity is closed or swiped from Recents. After a reboot, Sippy reconnects after the phone is unlocked; app updates also restore background reception. Idle availability does not use the microphone. Ending the last call returns the service to listening for new calls instead of stopping it.
+
+For calls while the phone sleeps, use **Background battery settings** to allow unrestricted battery use. Samsung may also require keeping Sippy out of **Sleeping apps**. Android Doze, network availability, and manufacturer restrictions can still affect direct SIP reception; guaranteed push wake-up requires provider-side push integration. Android **Force stop** blocks reception until the user opens Sippy again. The system's foreground-app **Stop** control also stops the current listener.
 
 ## Ringtones and settings backups
 

@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Switch
+import android.os.PowerManager
 
 internal class SettingsScreen(private val activity: MainActivity) {
     private val ui = activity.ui
@@ -67,6 +68,30 @@ internal class SettingsScreen(private val activity: MainActivity) {
         }
         addView(ui.action("Check permissions", "settings", fill = Palette.surface,
             outlined = true, click = activity::checkPermissions))
+        addView(ui.heading("Background calls", "Keep Sippy connected after closing the app. An ongoing notification shows the connection status."))
+        val startup = toggle("Start after phone restart", activity.prefs.startOnBoot).apply {
+            isEnabled = activity.prefs.backgroundCalling
+            setOnCheckedChangeListener { _, enabled -> activity.prefs.startOnBoot = enabled }
+        }
+        addView(toggle("Receive calls in background", activity.prefs.backgroundCalling).apply {
+            setOnCheckedChangeListener { _, enabled ->
+                activity.prefs.backgroundCalling = enabled
+                startup.isEnabled = enabled
+                activity.updateBackgroundCalling()
+            }
+        })
+        addView(startup)
+        fun batteryStatus(): String = if (activity.getSystemService(PowerManager::class.java)
+                .isIgnoringBatteryOptimizations(activity.packageName)) {
+            "Battery optimization is disabled for Sippy. On Samsung, also keep Sippy out of sleeping apps."
+        } else {
+            "For calls while the screen is off, allow Sippy unrestricted battery use. On Samsung, also keep Sippy out of sleeping apps."
+        }
+        val battery = ui.text(batteryStatus(), 13, Palette.secondary)
+        addView(battery)
+        activity.refreshSettingsStatus = { battery.text = batteryStatus() }
+        addView(ui.action("Background battery settings", "settings", fill = Palette.surface,
+            outlined = true, click = activity::openBatterySettings))
         @Suppress("DEPRECATION")
         val version = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName
         addView(ui.column(6).apply {

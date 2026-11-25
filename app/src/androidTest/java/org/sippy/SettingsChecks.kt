@@ -51,7 +51,7 @@ class SettingsChecks : Instrumentation() {
             AppearanceChecks(this).run()
             IncomingCallChecks(this).run()
             checkAudioImport()
-            result.putString("stream", "Passed: light/dark/system appearance, contrast, saved preference, live call continuity across theme changes, incoming-call notification Accept, alerts, JSON, audio import, and preview playback.\n")
+            result.putString("stream", "Passed: incoming calls and notification Decline with the activity fully closed, background availability after calls, notification Accept, live calls across theme changes, appearance, JSON, audio import, and preview playback.\n")
             finish(Activity.RESULT_OK, result)
         } catch (failure: Throwable) {
             result.putString("stream", "FAILED: ${failure.javaClass.simpleName}: ${failure.message}\n")

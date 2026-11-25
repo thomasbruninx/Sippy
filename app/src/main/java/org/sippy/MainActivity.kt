@@ -218,6 +218,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         attachContacts()
         timer.run()
+        refreshSettingsStatus?.invoke()
     }
 
     override fun onPostResume() {
@@ -645,6 +646,18 @@ class MainActivity : ComponentActivity() {
     }
 
     internal fun checkPermissions() = requestAppPermissions(PermissionRequest.REVIEW, AppPermission.entries)
+
+    internal fun updateBackgroundCalling() {
+        service?.updateBackgroundAvailability()
+    }
+
+    internal fun openBatterySettings() {
+        runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+            .onFailure {
+                runCatching { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
+                    .onFailure { message("Open Android settings and allow Sippy to run without battery restrictions.") }
+            }
+    }
 
     private fun withMicrophone(action: () -> Unit) {
         if (hasPermission(AppPermission.MICROPHONE)) {

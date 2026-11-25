@@ -6,6 +6,7 @@ import android.content.Intent
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.ParcelFileDescriptor
+import android.os.Build
 import org.linphone.core.Core
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -46,6 +47,7 @@ internal class IncomingCallChecks(private val instrumentation: Instrumentation) 
         val originalProfile = prefs.profile()
         val originalUri = prefs.data.getString("ringtoneUri", null)
         val originalVibrate = prefs.data.getBoolean("vibrateOnIncoming", false)
+        val originalBackground = prefs.backgroundCalling
         val coreField = SipService::class.java.getDeclaredField("core").apply { isAccessible = true }
         val playerField = IncomingRingtone::class.java.getDeclaredField("player").apply { isAccessible = true }
         val alertGetter = SipService::class.java.getDeclaredMethod("getIncomingRingtone").apply { isAccessible = true }
@@ -56,13 +58,21 @@ internal class IncomingCallChecks(private val instrumentation: Instrumentation) 
         try {
             main {
                 prefs.save(SipProfile(username = "ring-check", domain = "127.0.0.1", register = false))
+                prefs.backgroundCalling = true
                 prefs.data.edit().remove("ringtoneUri").apply()
                 service.configure()
             }
             val port = main { (coreField.get(service) as Core).transportsUsed.udpPort }
             check(port > 0)
             val loopback = InetAddress.getByName("127.0.0.1")
-            for ((index, vibrate) in listOf(false, true, false).withIndex()) {
+            for ((index, vibrate) in listOf(false, true, false, false).withIndex()) {
+                if (index == 3) {
+                    main { activity.finish() }
+                    await("The call screen did not close") { main { activity.isDestroyed } }
+                    check(activity.getSystemService(NotificationManager::class.java).activeNotifications.any { it.id == 900 }) {
+                        "Call availability stopped when the activity was closed"
+                    }
+                }
                 main { prefs.vibrateOnIncoming = vibrate }
                 DatagramSocket(0, loopback).use { socket ->
                     val id = UUID.randomUUID().toString()
@@ -123,16 +133,27 @@ internal class IncomingCallChecks(private val instrumentation: Instrumentation) 
                             main { activity.setAppearance(originalAppearance) }
                         }
                     }
-                    main { service.end(incomingId) }
+                    if (index == 3) notification.actions.first { it.title.toString() == "Decline" }.actionIntent.send()
+                    else main { service.end(incomingId) }
                     await("Declined call did not end") { main { service.state.lines.isEmpty() } }
                     check(!playing()) { "Ringtone continued after declining the call" }
                     await("Vibration continued after declining the call") { !vibrationActive() }
+                    check(activity.getSystemService(NotificationManager::class.java).activeNotifications.any { it.id == 900 }) {
+                        "Ending the call stopped background availability"
+                    }
+                    if (Build.VERSION.SDK_INT >= 34) {
+                        val serviceDump = ParcelFileDescriptor.AutoCloseInputStream(
+                            instrumentation.uiAutomation.executeShellCommand("dumpsys activity services org.sippy")
+                        ).bufferedReader().use { it.readText() }
+                        check("types=0x40000000" in serviceDump) { "Idle availability retained the microphone service type" }
+                    }
                 }
             }
         } finally {
             main {
                 service.state.lines.forEach { service.end(it.id) }
                 prefs.save(originalProfile)
+                prefs.backgroundCalling = originalBackground
                 prefs.data.edit().putString("ringtoneUri", originalUri).putBoolean("vibrateOnIncoming", originalVibrate).apply()
                 service.configure()
                 activity.finish()
