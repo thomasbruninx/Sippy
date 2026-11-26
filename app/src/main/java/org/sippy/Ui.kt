@@ -170,6 +170,16 @@ internal class Symbol(context: Context, private val kind: String, private val ti
                 path(10f, 5f, 21f, 5f, 21f, 19f, 10f, 19f, 3f, 12f, 10f, 5f)
                 path(12f, 9f, 17f, 15f); path(17f, 9f, 12f, 15f)
             }
+            "info" -> {
+                circle(12f, 12f, 9f)
+                circle(12f, 7.5f, .6f)
+                path(12f, 11f, 12f, 17f)
+            }
+            "link" -> {
+                path(13f, 4f, 20f, 4f, 20f, 11f)
+                path(20f, 4f, 10f, 14f)
+                path(9f, 5f, 4f, 5f, 4f, 20f, 19f, 20f, 19f, 15f)
+            }
             "plus" -> { path(12f, 5f, 12f, 19f); path(5f, 12f, 19f, 12f) }
             "hold" -> { path(9f, 5f, 9f, 19f); path(15f, 5f, 15f, 19f) }
             "resume" -> path(8f, 4f, 20f, 12f, 8f, 20f, 8f, 4f)

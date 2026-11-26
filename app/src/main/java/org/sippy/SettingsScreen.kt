@@ -188,6 +188,12 @@ internal class SettingsScreen(private val activity: MainActivity) {
             setPadding(0, ui.dp(15), 0, 0)
             addView(ui.text("Version $version", 16, weight = true))
             addView(ui.text("Made by Thomas Bruninx", 14, Palette.secondary))
+            addView(ui.action("License", "info", fill = Palette.surface, outlined = true) {
+                AppInformation.showLicense(activity)
+            })
+            addView(ui.action("GitHub", "link", fill = Palette.surface, outlined = true) {
+                AppInformation.openGitHub(activity)
+            })
         })
     }
 

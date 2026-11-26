@@ -10,8 +10,8 @@ android {
         applicationId = "org.sippy"
         minSdk = 28
         targetSdk = 36
-        versionCode = 11
-        versionName = "1.1.7"
+        versionCode = 12
+        versionName = "1.1.8"
         testInstrumentationRunner = "org.sippy.SettingsChecks"
         providers.gradleProperty("targetAbi").orNull?.let { abi ->
             require(abi in setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")) { "Unsupported targetAbi: $abi" }
@@ -32,3 +32,13 @@ dependencies {
     val customSdk = providers.gradleProperty("sipSdkAar").orNull
     implementation(if (customSdk == null) "org.linphone:linphone-sdk-android:5.4.127" else files(customSdk))
 }
+
+// Bundle the repository notices directly so the offline viewer stays in sync.
+val legalAssets = tasks.register<Sync>("prepareLegalAssets") {
+    from(rootProject.layout.projectDirectory) {
+        include("LICENSE.md", "THIRD_PARTY_NOTICES.md", "licenses/**")
+    }
+    into(layout.buildDirectory.dir("generated/legalAssets/legal"))
+}
+android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/legalAssets"))
+tasks.named("preBuild").configure { dependsOn(legalAssets) }
