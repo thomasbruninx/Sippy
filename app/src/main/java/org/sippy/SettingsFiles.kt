@@ -31,6 +31,7 @@ internal class SettingsFiles(private val activity: MainActivity) {
 
     fun chooseRingtone() {
         if (!idle()) return
+        if (prefs.isManaged("ringtoneUri")) return activity.message("The ringtone is managed by your organization.")
         ringtonePreview.stop()
         AlertDialog.Builder(activity).setTitle("Incoming ringtone")
             .setItems(arrayOf("Default ringtone", "Android ringtones", "Choose WAV or MP3 file")) { _, item ->
@@ -49,7 +50,10 @@ internal class SettingsFiles(private val activity: MainActivity) {
     }
 
     fun export() {
-        val password = CheckBox(activity).apply { text = "Include SIP password" }
+        val password = CheckBox(activity).apply {
+            text = if (prefs.isManaged("password")) "Password managed by your organization" else "Include SIP password"
+            isEnabled = !prefs.isManaged("password")
+        }
         AlertDialog.Builder(activity).setTitle("Export saved SIP settings")
             .setMessage("Exports the saved account, network settings, and codec order. If included, the password is readable in the JSON file.")
             .setView(password).setPositiveButton("Choose file") { _, _ ->
@@ -98,7 +102,7 @@ internal class SettingsFiles(private val activity: MainActivity) {
             }
             AUDIO -> importAudio(uri)
             EXPORT -> {
-                val json = SipSettingsJson.encode(prefs.profile(), prefs.codecs(), includePassword)
+                val json = SipSettingsJson.encode(prefs.profile(), prefs.codecs(), includePassword && !prefs.isManaged("password"))
                 includePassword = false
                 work("Could not export SIP settings.") {
                     requireNotNull(activity.contentResolver.openOutputStream(uri, "wt")).use { it.write(json.toByteArray(Charsets.UTF_8)) }
@@ -161,7 +165,7 @@ internal class SettingsFiles(private val activity: MainActivity) {
         val p = backup.profile
         AlertDialog.Builder(activity).setTitle("Import SIP settings?")
             .setMessage("Replace the saved account, network settings, and codec order with ${p.username.ifBlank { "an empty account" }}${p.domain.takeIf { it.isNotBlank() }?.let { "@$it" }.orEmpty()}?" +
-                if (p.password.isEmpty()) "\n\nThis file has no password. Enter it after importing." else "")
+                if (p.password.isEmpty() && !prefs.isManaged("password")) "\n\nThis file has no password. Enter it after importing." else "")
             .setPositiveButton("Import") { _, _ ->
                 if (idle()) runCatching {
                     val available = activity.sipState.availableCodecs
@@ -177,6 +181,7 @@ internal class SettingsFiles(private val activity: MainActivity) {
 
     private fun saveRingtone(uri: String?, name: String): Boolean {
         if (!idle()) return false
+        if (prefs.isManaged("ringtoneUri")) return false
         ringtonePreview.stop()
         val previous = prefs.data.getString("ringtoneUri", null)
         prefs.data.edit().putString("ringtoneUri", uri).putString("ringtoneName", name).apply()

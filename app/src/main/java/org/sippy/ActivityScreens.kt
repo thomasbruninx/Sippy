@@ -128,6 +128,11 @@ internal class ActivityScreens(private val activity: MainActivity) {
                 }
             }
             controls.addView(filterButton, ui.weight())
+            retentionButton.isEnabled = !activity.prefs.isManaged("eventRetentionDays")
+            if (!retentionButton.isEnabled) {
+                retentionButton.alpha = .6f
+                retentionButton.contentDescription = "Event retention managed by your organization"
+            }
             controls.addView(retentionButton, ui.weight())
         }
         updateControls()

@@ -22,7 +22,9 @@ internal object LdapTls {
                 chain.first().checkValidity()
                 LdapIdentity(key, chain)
             } catch (_: Exception) {
-                throw IllegalArgumentException("The selected LDAP client certificate is unavailable, expired or not permitted. Select it again in Settings → LDAP, or clear the selection.")
+                throw IllegalArgumentException(if (Preferences(app).isManaged("ldapClientCertificateAlias"))
+                    "The managed LDAP client certificate is unavailable or access was not granted. Contact your administrator."
+                else "The selected LDAP client certificate is unavailable, expired or not permitted. Select it again in Settings → LDAP, or clear the selection.")
             }
             context(identity).socketFactory
         }

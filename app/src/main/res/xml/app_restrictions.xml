@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<restrictions xmlns:android="http://schemas.android.com/apk/res/android">
+    <restriction android:key="managedConfigurationEnabled" android:title="@string/mdm_managedconfigurationenabled" android:description="@string/mdm_managedconfigurationenabled_description" android:restrictionType="bool" android:defaultValue="false" />
+    <restriction android:key="username" android:title="@string/mdm_username" android:description="@string/mdm_username_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="authUser" android:title="@string/mdm_authuser" android:description="@string/mdm_authuser_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="password" android:title="@string/mdm_password" android:description="@string/mdm_password_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="displayName" android:title="@string/mdm_displayname" android:description="@string/mdm_displayname_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="domain" android:title="@string/mdm_domain" android:description="@string/mdm_domain_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="server" android:title="@string/mdm_server" android:description="@string/mdm_server_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="proxy" android:title="@string/mdm_proxy" android:description="@string/mdm_proxy_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="realm" android:title="@string/mdm_realm" android:description="@string/mdm_realm_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="transport" android:title="@string/mdm_transport" android:description="@string/mdm_transport_description" android:restrictionType="choice" android:defaultValue="UDP" android:entries="@array/mdm_transport_values" android:entryValues="@array/mdm_transport_values" />
+    <restriction android:key="register" android:title="@string/mdm_register" android:description="@string/mdm_register_description" android:restrictionType="bool" android:defaultValue="true" />
+    <restriction android:key="expiry" android:title="@string/mdm_expiry" android:description="@string/mdm_expiry_description" android:restrictionType="integer" android:defaultValue="600" />
+    <restriction android:key="localPort" android:title="@string/mdm_localport" android:description="@string/mdm_localport_description" android:restrictionType="integer" android:defaultValue="0" />
+    <restriction android:key="rtpPort" android:title="@string/mdm_rtpport" android:description="@string/mdm_rtpport_description" android:restrictionType="integer" android:defaultValue="0" />
+    <restriction android:key="encryption" android:title="@string/mdm_encryption" android:description="@string/mdm_encryption_description" android:restrictionType="choice" android:defaultValue="None" android:entries="@array/mdm_encryption_labels" android:entryValues="@array/mdm_encryption_values" />
+    <restriction android:key="dtmf" android:title="@string/mdm_dtmf" android:description="@string/mdm_dtmf_description" android:restrictionType="choice" android:defaultValue="RTP" android:entries="@array/mdm_dtmf_labels" android:entryValues="@array/mdm_dtmf_values" />
+    <restriction android:key="stun" android:title="@string/mdm_stun" android:description="@string/mdm_stun_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="ice" android:title="@string/mdm_ice" android:description="@string/mdm_ice_description" android:restrictionType="bool" android:defaultValue="false" />
+    <restriction android:key="echo" android:title="@string/mdm_echo" android:description="@string/mdm_echo_description" android:restrictionType="bool" android:defaultValue="true" />
+    <restriction android:key="ipv6" android:title="@string/mdm_ipv6" android:description="@string/mdm_ipv6_description" android:restrictionType="bool" android:defaultValue="true" />
+    <restriction android:key="codecOrder" android:title="@string/mdm_codecorder" android:description="@string/mdm_codecorder_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="appearance" android:title="@string/mdm_appearance" android:description="@string/mdm_appearance_description" android:restrictionType="choice" android:defaultValue="SYSTEM" android:entries="@array/mdm_appearance_labels" android:entryValues="@array/mdm_appearance_values" />
+    <restriction android:key="transferMode" android:title="@string/mdm_transfermode" android:description="@string/mdm_transfermode_description" android:restrictionType="choice" android:defaultValue="BOTH" android:entries="@array/mdm_transfermode_labels" android:entryValues="@array/mdm_transfermode_values" />
+    <restriction android:key="dialpadTones" android:title="@string/mdm_dialpadtones" android:description="@string/mdm_dialpadtones_description" android:restrictionType="bool" android:defaultValue="true" />
+    <restriction android:key="vibrateOnIncoming" android:title="@string/mdm_vibrateonincoming" android:description="@string/mdm_vibrateonincoming_description" android:restrictionType="bool" android:defaultValue="false" />
+    <restriction android:key="ringtoneUri" android:title="@string/mdm_ringtoneuri" android:description="@string/mdm_ringtoneuri_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="backgroundCalling" android:title="@string/mdm_backgroundcalling" android:description="@string/mdm_backgroundcalling_description" android:restrictionType="bool" android:defaultValue="true" />
+    <restriction android:key="startOnBoot" android:title="@string/mdm_startonboot" android:description="@string/mdm_startonboot_description" android:restrictionType="bool" android:defaultValue="true" />
+    <restriction android:key="eventRetentionDays" android:title="@string/mdm_eventretentiondays" android:description="@string/mdm_eventretentiondays_description" android:restrictionType="integer" android:defaultValue="3" />
+    <restriction android:key="csvUrl" android:title="@string/mdm_csvurl" android:description="@string/mdm_csvurl_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="csvInterval" android:title="@string/mdm_csvinterval" android:description="@string/mdm_csvinterval_description" android:restrictionType="integer" android:defaultValue="60" />
+    <restriction android:key="ldapEnabled" android:title="@string/mdm_ldapenabled" android:description="@string/mdm_ldapenabled_description" android:restrictionType="bool" android:defaultValue="false" />
+    <restriction android:key="ldapHost" android:title="@string/mdm_ldaphost" android:description="@string/mdm_ldaphost_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="ldapPort" android:title="@string/mdm_ldapport" android:description="@string/mdm_ldapport_description" android:restrictionType="integer" android:defaultValue="636" />
+    <restriction android:key="ldapTls" android:title="@string/mdm_ldaptls" android:description="@string/mdm_ldaptls_description" android:restrictionType="bool" android:defaultValue="true" />
+    <restriction android:key="ldapBindDn" android:title="@string/mdm_ldapbinddn" android:description="@string/mdm_ldapbinddn_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="ldapPassword" android:title="@string/mdm_ldappassword" android:description="@string/mdm_ldappassword_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="ldapBaseDn" android:title="@string/mdm_ldapbasedn" android:description="@string/mdm_ldapbasedn_description" android:restrictionType="string" android:defaultValue="" />
+    <restriction android:key="ldapFilter" android:title="@string/mdm_ldapfilter" android:description="@string/mdm_ldapfilter_description" android:restrictionType="string" android:defaultValue="(objectClass=*)" />
+    <restriction android:key="ldapNames" android:title="@string/mdm_ldapnames" android:description="@string/mdm_ldapnames_description" android:restrictionType="string" android:defaultValue="displayName,cn,givenName,sn" />
+    <restriction android:key="ldapPhones" android:title="@string/mdm_ldapphones" android:description="@string/mdm_ldapphones_description" android:restrictionType="string" android:defaultValue="telephoneNumber,mobile,homePhone,ipPhone" />
+    <restriction android:key="ldapClientCertificateAlias" android:title="@string/mdm_ldapclientcertificatealias" android:description="@string/mdm_ldapclientcertificatealias_description" android:restrictionType="string" android:defaultValue="" />
+</restrictions>

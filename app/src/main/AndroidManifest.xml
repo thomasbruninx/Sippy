@@ -15,9 +15,10 @@
     <uses-permission android:name="android.permission.CAMERA" tools:node="remove" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
-    <application android:label="Sippy" android:icon="@mipmap/sippy" android:roundIcon="@mipmap/sippy"
+    <application android:name=".SippyApplication" android:label="Sippy" android:icon="@mipmap/sippy" android:roundIcon="@mipmap/sippy"
         android:theme="@style/SippyTheme" android:allowBackup="false"
         android:usesCleartextTraffic="true">
+        <meta-data android:name="android.content.APP_RESTRICTIONS" android:resource="@xml/app_restrictions" />
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop"
             android:configChanges="uiMode"
             android:windowSoftInputMode="adjustResize">

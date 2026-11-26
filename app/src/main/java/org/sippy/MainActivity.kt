@@ -110,6 +110,15 @@ class MainActivity : ComponentActivity() {
 
     internal val sip get() = service
     internal val sipState get() = snapshot
+    private val managedChanges: () -> Unit = {
+        if (::root.isInitialized && !isDestroyed) {
+            ldapTask?.close()
+            ldapTask = null
+            if (!prefs.ldapEnabled) ldapContacts = false
+            applyAppearance()
+            buildLayout()
+        }
+    }
     private val changes = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key?.startsWith("entries_") == true) refreshDirectoryViews()
         if (key in setOf("lastSync", "syncError", "csvUrl", "ldapClientCertificateAlias")) refreshSettingsStatus?.invoke()
@@ -157,6 +166,7 @@ class MainActivity : ComponentActivity() {
 
         buildLayout()
         prefs.data.registerOnSharedPreferenceChangeListener(changes)
+        ManagedConfiguration.observe(managedChanges)
         bound = bindService(Intent(this, SipService::class.java), connection, BIND_AUTO_CREATE)
         runCatching { directory.schedule() }.onFailure { message(it.localizedMessage ?: "CSV sync could not be scheduled.") }
         attachContacts()
@@ -222,6 +232,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        ManagedConfiguration.refresh(this)
+        runCatching { service?.applyManagedConfiguration() }
         attachContacts()
         timer.run()
         refreshSettingsStatus?.invoke()
@@ -245,6 +257,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        ManagedConfiguration.removeObserver(managedChanges)
         handler.removeCallbacksAndMessages(null)
         settingsFiles.close()
         dialpadToneGenerator?.release()
@@ -339,6 +352,7 @@ class MainActivity : ComponentActivity() {
             renderPage(keepCallScroll = oldVisible && showCall && !closing && previous.selected == newState.selected)
         }
         if (page == Page.SETTINGS && !showEvents && settingsTab == 2 && previous.availableCodecs != newState.availableCodecs) renderPage()
+        if (page == Page.SETTINGS && !showEvents && settingsTab == 5) refreshSettingsStatus?.invoke()
         topStatus.text = newState.status
         topStatus.contentDescription = if (newState.registrationDetail != null) {
             "${newState.status}. Tap for details."
@@ -639,11 +653,16 @@ class MainActivity : ComponentActivity() {
     private fun View.toggleEnabled(enable: Boolean) { isEnabled = enable; alpha = if (enable) 1f else .42f }
 
     private fun transferMenu(id: Long) {
-        AlertDialog.Builder(this).setTitle("Transfer call")
-            .setItems(arrayOf("Direct transfer", "Ask first")) { _, choice ->
-                if (choice == 0) chooseDestination("Direct transfer", "Transfer") { service?.blind(id, it) }
-                else chooseDestination("Ask first", "Call") { dial(it, id) }
-            }.setNegativeButton("Cancel", null).show()
+        fun direct() = chooseDestination("Direct transfer", "Transfer") { service?.blind(id, it) }
+        fun attended() = chooseDestination("Ask first", "Call") { dial(it, id) }
+        when (prefs.transferMode) {
+            TransferMode.DIRECT_ONLY -> direct()
+            TransferMode.ATTENDED_ONLY -> attended()
+            TransferMode.BOTH -> AlertDialog.Builder(this).setTitle("Transfer call")
+                .setItems(arrayOf("Direct transfer", "Ask first")) { _, choice ->
+                    if (choice == 0) direct() else attended()
+                }.setNegativeButton("Cancel", null).show()
+        }
     }
 
     private fun dial(target: String, consultation: Long? = null) {

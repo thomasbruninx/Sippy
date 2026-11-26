@@ -10,7 +10,7 @@ android {
         applicationId = "org.sippy"
         minSdk = 28
         targetSdk = 36
-        versionCode = 10
+        versionCode = 11
         versionName = "1.1.7"
         testInstrumentationRunner = "org.sippy.SettingsChecks"
         providers.gradleProperty("targetAbi").orNull?.let { abi ->

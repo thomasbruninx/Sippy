@@ -17,6 +17,9 @@ internal enum class Encryption(val label: String) {
     None("None (RTP)"), SRTP("SRTP (SDES)"), ZRTP("ZRTP"), DTLS("DTLS-SRTP")
 }
 internal enum class Dtmf(val label: String) { RTP("RTP events (RFC 4733)"), INFO("SIP INFO") }
+internal enum class TransferMode(val label: String) {
+    DIRECT_ONLY("Direct only"), ATTENDED_ONLY("Attended only"), BOTH("Both")
+}
 internal enum class Appearance(val label: String) { LIGHT("Light"), DARK("Dark"), SYSTEM("Follow system") }
 
 internal data class SipProfile(
@@ -64,8 +67,10 @@ internal data class SipProfile(
 
 internal data class Codec(val id: String, val label: String, val enabled: Boolean)
 
-internal class Preferences(context: Context) {
-    val data = context.getSharedPreferences("sippy", Context.MODE_PRIVATE)
+internal class Preferences(context: Context, private val useManaged: Boolean = true) {
+    private val local = context.getSharedPreferences("sippy", Context.MODE_PRIVATE)
+    val data = if (useManaged) ManagedPreferences(local) else local
+    fun isManaged(key: String) = useManaged && ManagedConfiguration.isManaged(key)
 
     var backgroundCalling: Boolean
         get() = data.getBoolean("backgroundCalling", true)
@@ -81,6 +86,10 @@ internal class Preferences(context: Context) {
     var appearance: Appearance
         get() = Appearance.entries.firstOrNull { it.name == data.getString("appearance", null) } ?: Appearance.SYSTEM
         set(value) { data.edit().putString("appearance", value.name).apply() }
+
+    var transferMode: TransferMode
+        get() = TransferMode.entries.firstOrNull { it.name == data.getString("transferMode", null) } ?: TransferMode.BOTH
+        set(value) { data.edit().putString("transferMode", value.name).apply() }
 
     var dialpadTones: Boolean
         get() = data.getBoolean("dialpadTones", true)
@@ -184,6 +193,8 @@ internal class Preferences(context: Context) {
     }
 
     private fun loadPassword(key: String = "passwordCipher"): String {
+        val managedKey = if (key == "ldapPasswordCipher") "ldapPassword" else "password"
+        if (useManaged && ManagedConfiguration.values.containsKey(managedKey)) return ManagedConfiguration.values[managedKey] as? String ?: ""
         val encrypted = data.getString(key, null) ?: return ""
         return runCatching {
             val bytes = Base64.decode(encrypted, Base64.NO_WRAP)

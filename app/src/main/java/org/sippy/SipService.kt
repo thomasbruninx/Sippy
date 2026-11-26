@@ -98,6 +98,21 @@ class SipService : Service() {
     internal var onChange: ((SipState) -> Unit)? = null
     internal var onMessage: ((String) -> Unit)? = null
 
+    internal var managedUpdatePending = false
+        private set
+    private var appliedCodecs = emptyList<Codec>()
+    private var managedBlocked = false
+    private val managedChanges: () -> Unit = { applyManagedConfiguration() }
+    internal fun applyManagedConfiguration() {
+        val reconnect = prefs.profile() != profile || prefs.codecs() != appliedCodecs ||
+            ManagedConfiguration.blocksConnection != managedBlocked || core == null && !managedBlocked
+        if (reconnect) {
+            if (calls().isEmpty()) configure() else managedUpdatePending = true
+        }
+        updateIncomingVibration()
+        updateBackgroundAvailability()
+    }
+
     private val listener = object : CoreListenerStub() {
         override fun onAudioDeviceChanged(core: Core, audioDevice: AudioDevice) {
             handler.post {
@@ -188,6 +203,7 @@ class SipService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        ManagedConfiguration.observe(managedChanges)
         activityStore.schedulePruning()
         activityStore.prune()
         notifications.createNotificationChannel(NotificationChannel(ACTIVE_CHANNEL, "Active SIP calls", NotificationManager.IMPORTANCE_LOW))
@@ -212,6 +228,7 @@ class SipService : Service() {
     }
 
     override fun onDestroy() {
+        ManagedConfiguration.removeObserver(managedChanges)
         handler.removeCallbacksAndMessages(null)
         callProximity.release()
         incomingRingtone.stop()
@@ -227,6 +244,14 @@ class SipService : Service() {
         if (calls().isNotEmpty()) return
         core?.let { it.removeListener(listener); it.stop() }
         core = null
+        managedUpdatePending = false
+        managedBlocked = ManagedConfiguration.blocksConnection
+        if (managedBlocked) {
+            ready = false
+            status = "Managed configuration needs attention"
+            updateBackgroundAvailability()
+            return
+        }
         var initialized: Core? = null
         ready = false
         status = "Set up your SIP account"
@@ -343,6 +368,10 @@ class SipService : Service() {
         core?.setRing(null)
     }
 
+    internal fun updateIncomingVibration() {
+        if (incomingLine != null) incomingRingtone.setVibrationEnabled(prefs.vibrateOnIncoming)
+    }
+
     private fun recordCall(log: CallLog) {
         val incoming = log.dir == Call.Dir.Incoming
         val remote = log.remoteAddress
@@ -377,6 +406,7 @@ class SipService : Service() {
         val sorted = payloads.sortedBy { priority[id(it.mimeType)] ?: Int.MAX_VALUE }
         sorted.forEach { it.enable(id(it.mimeType) in enabled && it.isUsable) }
         engine.setAudioPayloadTypes(sorted.toTypedArray())
+        appliedCodecs = order
     }
 
     internal fun dial(raw: String, consultSource: Long? = null) = command {
@@ -626,6 +656,10 @@ class SipService : Service() {
                 removeForeground()
                 stopSelf()
             }
+        }
+        if (current.isEmpty() && managedUpdatePending) {
+            configure()
+            return
         }
         publish()
     }

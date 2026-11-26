@@ -29,11 +29,13 @@ For calls while the phone sleeps, use **Background battery settings** to allow u
 
 ## Ringtones and settings backups
 
-Use the **Settings page** dropdown to choose Account, Network, Codecs, Phonebook, Sounds, Application, or LDAP. In **Settings → Sounds → Incoming ringtone**, keep the default ringtone, choose an Android ringtone, or select a WAV/MP3 file (up to 20 MB). Custom audio is checked and copied into Sippy, so moving the original file does not break ringing. Selected tones use the phone's ringtone volume and silent/vibrate mode. Return to **Default ringtone** to restore the original sound. Use **Play preview** and **Pause preview** to listen to the selected ringtone. Playback pauses and resumes from the same position; leaving Sounds or receiving a call stops it. The **Dialpad tones** toggle is also on the Sounds page. Enable **Vibrate on incoming calls** on this page to repeat a vibration pattern while a call is ringing. It is off by default. Sound follows ringtone volume and normal/vibrate mode; vibration respects silent mode and Do Not Disturb. Both alerts stop when the incoming call is answered, declined, or cancelled.
+Use the **Settings page** dropdown to choose Account, Network, Codecs, Phonebook, Sounds, Application, or LDAP. In **Settings → Sounds → Incoming ringtone**, keep the default ringtone, choose an Android ringtone, or select a WAV/MP3 file (up to 20 MB). Custom audio is checked and copied into Sippy, so moving the original file does not break ringing. Selected tones use the phone's ringtone volume and silent/vibrate mode. Return to **Default ringtone** to restore the original sound. Use **Play preview** and **Pause preview** to listen to the selected ringtone. Playback pauses and resumes from the same position; leaving Sounds or receiving a call stops it. The **Dialpad tones** toggle is also on the Sounds page. Enable **Vibrate on incoming calls** on this page to repeat a vibration pattern while a call is ringing. It is off by default. Use **Phone sound settings** to check Android's call vibration controls. If needed, enable vibration for incoming calls there. Sound follows ringtone volume and normal/vibrate mode; vibration respects silent mode and Do Not Disturb. Changing Sippy's vibration toggle during ringing applies immediately. Both alerts stop when the incoming call is answered, declined, or cancelled.
 
 In-call DTMF keys also play a short, quiet local tone. **Settings → Sounds → Dialpad tones** controls this feedback as well as the dialer's tones; turning it off still sends DTMF to the remote party.
 
 **Export SIP settings** saves the stored account, advanced account settings, network/media settings, and codec order to a versioned JSON file. Save any edits before exporting. Password export is optional and off by default; when included, the JSON contains the readable password. **Import SIP settings** validates the file and asks before replacing the saved settings and reconnecting. An export without a password requires entering the password again after import. Ringtones, contacts, history, and event logs are not part of the SIP settings backup.
+
+**Settings → Application → Transfer mode** selects **Direct only**, **Attended only**, or **Both** (the default). Direct only and Attended only open the destination picker immediately with that transfer mode. Both asks you to choose Direct transfer or Ask first each time. Attended transfers let you speak to the recipient before completing the transfer. The choice is saved automatically.
 
 In **Settings → Application → Appearance**, choose **Light**, **Dark**, or **Follow system** (the default). The choice is saved and applied immediately. Follow system updates the app when Android's dark theme changes. Changing the appearance keeps the SIP service and current calls connected.
 
@@ -87,3 +89,72 @@ Open **History** for call direction, outcome, start time, and duration. Use **Re
 During earpiece calls, supported phones use their proximity sensor to turn the display off and block accidental face touches. Moving the phone away restores the display. Speakerphone and headset routes do not enable this protection; ending the call releases it. No camera permission is required.
 
 Version 1.1.7 supports Android 9 and later, including the Galaxy A6+ on Android 10, with a separate ARM64 build for modern phones.
+
+## MDM / Android Enterprise managed configuration
+
+Sippy supports Android Enterprise AppConfig through `RestrictionsManager`, including Knox Manage. The APK advertises its fields using `android.content.APP_RESTRICTIONS` and [app_restrictions.xml](app/src/main/res/xml/app_restrictions.xml). No Knox SDK or device-administrator permission is needed by Sippy. The configuration belongs to the installed app in its managed device or work profile, with package ID **`org.sippy`**.
+
+In Knox Manage, add/update Sippy as an internal Android APK and enable **Managed Configuration (Android Enterprise)**. Assign the app to your Android Enterprise devices or work profiles, open **Set Configuration**, and set **Enable managed configuration** (`managedConfigurationEnabled`) to `true`. Configure the required SIP values and save/push the assignment. Enable the MDM's **Auto-run after Install** option when provisioning new devices so Sippy reads its settings on first launch. Console wording varies between Knox Manage versions. See [Samsung's AppConfig instructions](https://docs.samsungknox.com/admin/knox-manage/kbas/kba-196/) and [internal-app instructions](https://docs.samsungknox.com/admin/knox-manage/configure/applications/add-applications/add-internal-android-ios-and-macos-apps/).
+
+Use [mdm-example.json](mdm-example.json) as a key/value example, replacing the example server and credentials. It represents the managed configuration, not the SIP backup-file format. MDM consoles typically provide a form generated from the APK; consoles supporting JSON AppConfig can use the same keys and primitive JSON types. Configure your MDM's supported per-user/device substitutions for individual SIP credentials; Sippy expects already-resolved values and does not expand template variables itself.
+
+Only keys actually included in the MDM payload are managed. Omit keys users should be able to edit; an explicitly supplied empty string clears/owns a setting. Some consoles insert schema defaults automatically, so review which fields are included. `codecOrder` is the exception: an empty value leaves codecs unmanaged. The enable switch defaults to `false`, and no settings are managed on ordinary personal installations.
+
+Managed fields are marked **Managed** and cannot be edited locally. Local values stay separate, so removing a key, removing the policy, or setting `managedConfigurationEnabled=false` restores its local value. Saving/importing other settings cannot overwrite managed values. Managed SIP and LDAP passwords are read from Android's policy bundle, are not copied into Sippy's local password storage, and managed SIP passwords are excluded from exports even when password export is requested. Your MDM still holds the delivered credentials and controls access to its console/policy exports.
+
+Updates are read on startup, resume, and Android's managed-restrictions broadcast while Sippy's process is running. SIP/network/codec reconnection waits until all current calls finish; the Application page reports a pending change. Appearance, transfer mode and other non-connection settings take effect immediately. Changing the managed CSV source clears the previous synced results and reschedules sync. Removing management keeps Local/Imported contacts and history. Invalid configurations are rejected as a whole with a value-free error on the Application page; a running app keeps its last valid policy. If no valid policy is available at startup, an invalid/pending managed policy blocks SIP connection until corrected. Force-stopped apps must be started again by the user or MDM.
+
+AppConfig does not grant microphone/contacts/notification permissions, install credentials, exempt the app from battery restrictions, or bypass Do Not Disturb. Configure those through your MDM's normal device/app policies or allow the user's Android prompts. For an LDAP client certificate, deploy the certificate/private key and grant `org.sippy` access through the MDM (or have the user select it), then provide its alias. Ringtone URIs must refer to audio already accessible on the device; Sippy does not download remote ringtone URLs from AppConfig.
+
+The supplied APKs use the existing debug signing identity and can be distributed as internal APKs. A Managed Google Play publication requires your production release/signing workflow. This build retains version name **1.1.7** and raises Android's version code to **11** so MDMs can recognize it as an update to earlier builds. Keep the package/signing identity consistent when updating enrolled devices.
+
+Managed fields (only supplied fields are enforced):
+
+| Key | Type | Values / meaning |
+| --- | --- | --- |
+| `managedConfigurationEnabled` | boolean | Must be true to apply the payload. |
+| `username` | string | SIP username. |
+| `authUser` | string | SIP authentication ID. |
+| `password` | string | SIP secret; empty explicitly selects no password. |
+| `displayName` | string | Caller display name. |
+| `domain` | string | SIP domain. |
+| `server` | string | Registrar override. |
+| `proxy` | string | Outbound proxy. |
+| `realm` | string | Authentication realm. |
+| `transport` | string | `UDP`, `TCP`, `TLS` |
+| `register` | boolean | Register with SIP server. |
+| `expiry` | integer | 60–86400 seconds. |
+| `localPort` | integer | 0–65535; 0 means automatic. |
+| `rtpPort` | integer | 0–65534; 0 means automatic. |
+| `encryption` | string | `None`, `SRTP`, `ZRTP`, `DTLS` |
+| `dtmf` | string | `RTP`, `INFO` |
+| `stun` | string | STUN server. |
+| `ice` | boolean | Enable ICE. |
+| `echo` | boolean | Echo cancellation. |
+| `ipv6` | boolean | Enable IPv6. |
+| `codecOrder` | string | Comma-separated enabled IDs in priority order: opus, g722, pcma, pcmu, g729, amr, amr-wb. SDK availability still applies. |
+| `appearance` | string | `LIGHT`, `DARK`, `SYSTEM` |
+| `transferMode` | string | `DIRECT_ONLY`, `ATTENDED_ONLY`, `BOTH` |
+| `dialpadTones` | boolean | Dialpad tones. |
+| `vibrateOnIncoming` | boolean | Vibrate on incoming calls. |
+| `ringtoneUri` | string | Empty: default ringtone. Otherwise accessible content://, android.resource:// or file:// URI. |
+| `backgroundCalling` | boolean | Receive calls in background. |
+| `startOnBoot` | boolean | Start after phone restart. |
+| `eventRetentionDays` | integer | 1–30 days. |
+| `csvUrl` | string | CSV phonebook URL. |
+| `csvInterval` | integer | 15–10080 minutes. |
+| `ldapEnabled` | boolean | Enable LDAP directory. |
+| `ldapHost` | string | LDAP server. |
+| `ldapPort` | integer | 1–65535. |
+| `ldapTls` | boolean | true: LDAPS; false: LDAP with StartTLS. |
+| `ldapBindDn` | string | LDAP bind DN or username. |
+| `ldapPassword` | string | LDAP secret. |
+| `ldapBaseDn` | string | LDAP search base. |
+| `ldapFilter` | string | LDAP search filter. |
+| `ldapNames` | string | LDAP name attributes. |
+| `ldapPhones` | string | LDAP number attributes. |
+| `ldapClientCertificateAlias` | string | Android-installed client certificate alias; access must be granted separately. |
+
+Validation: integer/boolean values must have their actual types, choices must match the documented strings, endpoints must omit protocols, and text values are limited to 16,384 characters. Unsupported keys are ignored. LDAP may be provisioned partially so users can fill unmanaged credentials before searching.
+
+For development-only end-to-end tests, the test APK contains a temporary device-policy controller. On a disposable emulator with no device/profile owner, install it with `adb install -t`, set `org.sippy.test/org.sippy.ManagedTestAdmin` as device owner, apply its `full` fixture before starting Sippy, and run `am instrument -w -e checks mdm org.sippy.test/org.sippy.SettingsChecks`. Remove the test owner with `dpm remove-active-admin` and restore the emulator afterward. The controller is excluded from both distributable Sippy APKs; do not provision it on a user's phone.

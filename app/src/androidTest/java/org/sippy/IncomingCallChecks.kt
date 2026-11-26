@@ -107,6 +107,20 @@ internal class IncomingCallChecks(private val instrumentation: Instrumentation) 
                     val notification = checkNotNull(notificationManager.activeNotifications
                         .firstOrNull { it.id == 901 }?.notification) { "Incoming notification disappeared before its actions were checked" }
                     check(notification.actions.map { it.title.toString() } == listOf("Accept", "Decline"))
+                    Thread.sleep(1500)
+                    check(vibrationActive() == vibrate) { "Incoming vibration did not continue after the notification appeared" }
+                    if (vibrate) {
+                        main {
+                            prefs.vibrateOnIncoming = false
+                            service.updateIncomingVibration()
+                        }
+                        await("Turning vibration off did not stop the incoming alert") { !vibrationActive() }
+                        main {
+                            prefs.vibrateOnIncoming = true
+                            service.updateIncomingVibration()
+                        }
+                        await("Turning vibration on did not resume the incoming alert", ::vibrationActive)
+                    }
                     if (index == 2) {
                         notification.actions.first { it.title.toString() == "Accept" }.actionIntent.send()
                         socket.soTimeout = 10000
