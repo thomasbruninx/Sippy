@@ -12,11 +12,19 @@ import org.json.JSONObject
 
 /** Device-side checks use Android's real JSON parser without additional dependencies. */
 class SettingsChecks : Instrumentation() {
-    override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
+    private var checks: String? = null
+    override fun onCreate(arguments: Bundle?) { checks = arguments?.getString("checks"); super.onCreate(arguments); start() }
+    private fun status(message: String) = sendStatus(0, Bundle().apply { putString("stream", "$message\n") })
 
     override fun onStart() {
         val result = Bundle()
         try {
+            if (checks == "ldap" || checks == "calls") {
+                if (checks == "ldap") LdapChecks(this).run() else IncomingCallChecks(this).run()
+                result.putString("stream", "Passed: $checks checks.\n")
+                finish(Activity.RESULT_OK, result)
+                return
+            }
             val p = SipProfile(username = "201", domain = "pbx.example.com", password = "test-\"\\\n-secret",
                 authUser = "auth201", displayName = "Desk", server = "registrar.example.com:5061",
                 proxy = "proxy.example.com:5061", realm = "example", transport = Transport.TLS,
@@ -48,15 +56,18 @@ class SettingsChecks : Instrumentation() {
             }
             rejects { it.remove("account") }
             check(runCatching { SipSettingsJson.decode("not json") }.isFailure)
+            LdapChecks(this).run()
+            status("LDAP checks passed.")
             HistoryCsvChecks(this).run()
             ProximityChecks(this).run()
             AppearanceChecks(this).run()
+            status("Appearance checks passed; checking calls and DTMF feedback.")
             IncomingCallChecks(this).run()
             checkAudioImport()
-            result.putString("stream", "Passed: durable history clearing and database upgrade, local-only CSV round trip, closed-app calls, background availability, notification actions, themes, JSON, audio import, and preview playback.\n")
+            result.putString("stream", "Passed: LDAP TLS, authentication, searching, escaping and encrypted settings; durable history clearing and database upgrade, local-only CSV round trip, closed-app calls, background availability, notification actions, themes, JSON, audio import, and preview playback.\n")
             finish(Activity.RESULT_OK, result)
         } catch (failure: Throwable) {
-            result.putString("stream", "FAILED: ${failure.javaClass.simpleName}: ${failure.message}\n")
+            result.putString("stream", "FAILED: ${failure.javaClass.simpleName}: ${failure.message}\n${failure.stackTrace.take(8).joinToString("\n")}\n")
             finish(Activity.RESULT_CANCELED, result)
         }
     }

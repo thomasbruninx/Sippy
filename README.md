@@ -29,7 +29,9 @@ For calls while the phone sleeps, use **Background battery settings** to allow u
 
 ## Ringtones and settings backups
 
-Use the **Settings page** dropdown to choose Account, Network, Codecs, Phonebook, Sounds, or Application. In **Settings → Sounds → Incoming ringtone**, keep the default ringtone, choose an Android ringtone, or select a WAV/MP3 file (up to 20 MB). Custom audio is checked and copied into Sippy, so moving the original file does not break ringing. Selected tones use the phone's ringtone volume and silent/vibrate mode. Return to **Default ringtone** to restore the original sound. Use **Play preview** and **Pause preview** to listen to the selected ringtone. Playback pauses and resumes from the same position; leaving Sounds or receiving a call stops it. The **Dialpad tones** toggle is also on the Sounds page. Enable **Vibrate on incoming calls** on this page to repeat a vibration pattern while a call is ringing. It is off by default. Sound follows ringtone volume and normal/vibrate mode; vibration respects silent mode and Do Not Disturb. Both alerts stop when the incoming call is answered, declined, or cancelled.
+Use the **Settings page** dropdown to choose Account, Network, Codecs, Phonebook, Sounds, Application, or LDAP. In **Settings → Sounds → Incoming ringtone**, keep the default ringtone, choose an Android ringtone, or select a WAV/MP3 file (up to 20 MB). Custom audio is checked and copied into Sippy, so moving the original file does not break ringing. Selected tones use the phone's ringtone volume and silent/vibrate mode. Return to **Default ringtone** to restore the original sound. Use **Play preview** and **Pause preview** to listen to the selected ringtone. Playback pauses and resumes from the same position; leaving Sounds or receiving a call stops it. The **Dialpad tones** toggle is also on the Sounds page. Enable **Vibrate on incoming calls** on this page to repeat a vibration pattern while a call is ringing. It is off by default. Sound follows ringtone volume and normal/vibrate mode; vibration respects silent mode and Do Not Disturb. Both alerts stop when the incoming call is answered, declined, or cancelled.
+
+In-call DTMF keys also play a short, quiet local tone. **Settings → Sounds → Dialpad tones** controls this feedback as well as the dialer's tones; turning it off still sends DTMF to the remote party.
 
 **Export SIP settings** saves the stored account, advanced account settings, network/media settings, and codec order to a versioned JSON file. Save any edits before exporting. Password export is optional and off by default; when included, the JSON contains the readable password. **Import SIP settings** validates the file and asks before replacing the saved settings and reconnecting. An export without a password requires entering the password again after import. Ringtones, contacts, history, and event logs are not part of the SIP settings backup.
 
@@ -54,6 +56,16 @@ IT support,302
 
 An optional header is supported. Use `name` and `number` for explicit columns. Comma, semicolon, and tab delimiters are accepted. Numbers may be extensions, phone numbers, or SIP addresses. A number-only directory is valid.
 
+### LDAP directory
+
+**Settings → LDAP → Enable LDAP directory** turns LDAP on or off and is off by default. When off, Contacts shows your personal phonebooks without the Personal phonebooks / LDAP directory selector. Saved LDAP settings and the client-certificate selection are kept, and connection testing is disabled until LDAP is enabled again.
+
+Configure a company directory in Settings → LDAP: server, port, LDAPS (usually 636) or LDAP with StartTLS (usually 389), bind DN, password and search base. Save the settings, or test them before saving. Server certificates and hostnames are verified; passwords are stored encrypted on the device. LDAP settings are separate from SIP JSON backups.
+
+In Contacts, select **LDAP directory** from the phonebook selector. Search by name or number, or leave the search blank to browse. LDAP results stay separate from personal phonebooks and are queried online rather than imported. Tap a result to confirm a call. Each search is limited to 200 directory entries; narrow the search if the limit is reached. Name and number attributes and the base search filter can be adjusted for your directory schema. Defaults include `displayName`, `cn`, `givenName`, `sn` and common telephone attributes. For mutual TLS, use **Choose client certificate** to select a certificate and private key from Android's credential store; use **Install client certificate** to open Android's installer for your provider's `.p12`/`.pfx` if needed, then choose the installed certificate. The choice is saved immediately. **Clear client certificate** restores **None** for password-only access. Only the alias is saved in Sippy; the private key stays in Android's credential store. A missing, expired or revoked key requires selecting it again. Clearing the selection does not delete the certificate from Android. Both LDAPS and StartTLS support client certificates, while server certificates and hostnames remain verified.
+
+A TLS `certificate_required` response occurs before LDAP authentication and is not an invalid-password result. Confirm the exact hostname, port, access policy and acceptable client-certificate issuer with your provider. Sippy sends the configured server name during TLS negotiation (SNI). A server-requested certificate must come from an issuer that server accepts; an arbitrary or self-signed certificate will not normally work.
+
 ## Codecs
 
 The standard Linphone dependency supplies Opus, G.722, PCMA (G.711 A-law), and PCMU (G.711 μ-law). **Settings → Codecs** controls the enabled codecs and offer order. Availability is read from the installed SDK.
@@ -74,4 +86,4 @@ Open **History** for call direction, outcome, start time, and duration. Use **Re
 
 During earpiece calls, supported phones use their proximity sensor to turn the display off and block accidental face touches. Moving the phone away restores the display. Speakerphone and headset routes do not enable this protection; ending the call releases it. No camera permission is required.
 
-Version 1.1.6 supports Android 9 and later, including the Galaxy A6+ on Android 10, with a separate ARM64 build for modern phones.
+Version 1.1.7 supports Android 9 and later, including the Galaxy A6+ on Android 10, with a separate ARM64 build for modern phones.

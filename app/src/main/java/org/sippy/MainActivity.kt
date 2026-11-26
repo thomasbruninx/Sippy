@@ -101,6 +101,10 @@ class MainActivity : ComponentActivity() {
     private var observersAttached = false
     private var refreshContacts: (() -> Unit)? = null
     internal var refreshSettingsStatus: (() -> Unit)? = null
+    internal var ldapTask: LdapTask? = null
+    private var ldapContacts = false
+    internal var ldapQuery = ""
+    private var callToneGenerator: ToneGenerator? = null
     internal var settingsTab = 0
     private val handler = Handler(Looper.getMainLooper())
 
@@ -108,7 +112,7 @@ class MainActivity : ComponentActivity() {
     internal val sipState get() = snapshot
     private val changes = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key?.startsWith("entries_") == true) refreshDirectoryViews()
-        if (key in setOf("lastSync", "syncError", "csvUrl")) refreshSettingsStatus?.invoke()
+        if (key in setOf("lastSync", "syncError", "csvUrl", "ldapClientCertificateAlias")) refreshSettingsStatus?.invoke()
     }
 
     private val contactObserver = object : ContentObserver(handler) {
@@ -139,6 +143,8 @@ class MainActivity : ComponentActivity() {
         directory = Directory(this)
         page = Page.entries.getOrNull(savedInstanceState?.getInt("page") ?: 0) ?: Page.DIALER
         settingsTab = savedInstanceState?.getInt("settingsTab") ?: 0
+        ldapContacts = savedInstanceState?.getBoolean("ldapContacts") ?: false
+        ldapQuery = savedInstanceState?.getString("ldapQuery").orEmpty()
         showEvents = savedInstanceState?.getBoolean("showEvents") == true
         number = savedInstanceState?.getString("number").orEmpty()
         settingsFiles.includePassword = savedInstanceState?.getBoolean("exportPassword") == true
@@ -242,6 +248,8 @@ class MainActivity : ComponentActivity() {
         handler.removeCallbacksAndMessages(null)
         settingsFiles.close()
         dialpadToneGenerator?.release()
+        callToneGenerator?.release()
+        ldapTask?.close()
         prefs.data.unregisterOnSharedPreferenceChangeListener(changes)
         if (observersAttached) contentResolver.unregisterContentObserver(contactObserver)
         if (bound) {
@@ -256,6 +264,8 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putInt("page", page.ordinal)
         outState.putInt("settingsTab", settingsTab)
+        outState.putBoolean("ldapContacts", ldapContacts)
+        outState.putString("ldapQuery", ldapQuery)
         outState.putBoolean("showEvents", showEvents)
         outState.putString("number", number)
         outState.putBoolean("exportPassword", settingsFiles.includePassword)
@@ -429,6 +439,8 @@ class MainActivity : ComponentActivity() {
     private fun SipState.controls() = copy(lines = lines.map { it.copy(seconds = 0) })
 
     internal fun renderPage(keepCallScroll: Boolean = false) {
+        ldapTask?.close()
+        ldapTask = null
         backNavigation.isEnabled = page != Page.DIALER || showCall
         settingsFiles.ringtonePreview.stop()
         settingsFiles.ringtonePreview.onChange = null
@@ -587,6 +599,7 @@ class MainActivity : ComponentActivity() {
                 tones = (tones + tone).takeLast(24)
                 output.text = tones
                 service?.digits(line.id, tone)
+                playCallTone(tone)
             })
         }
         if (connected) {
@@ -765,8 +778,35 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    internal fun openLdapSettings() { navigate(Page.SETTINGS) }
+
+    internal fun setLdapEnabled(enabled: Boolean) {
+        prefs.ldapEnabled = enabled
+        if (!enabled) {
+            ldapTask?.close()
+            ldapTask = null
+            ldapContacts = false
+        }
+        if (page == Page.CONTACTS) renderPage()
+    }
+
     private fun contacts() = padded(10).apply {
         addView(ui.heading("Contacts", "Phone contacts and your own SIP directories."))
+        if (!prefs.ldapEnabled) ldapContacts = false
+        if (prefs.ldapEnabled) {
+            val selector = ui.action(if (ldapContacts) "LDAP directory" else "Personal phonebooks", "down", Palette.surface, outlined = true) {}
+            selector.setOnClickListener {
+                popup(selector, listOf("Personal phonebooks", "LDAP directory")) {
+                    ldapContacts = it == 1
+                    renderPage()
+                }
+            }
+            addView(selector)
+        }
+        if (ldapContacts) {
+            addView(LdapScreen(this@MainActivity).build(), LinearLayout.LayoutParams(-1, 0, 1f))
+            return@apply
+        }
         addView(ui.action("Add contact", "plus") { editContact(null) })
         val directoryView = directoryView(query, source, { item ->
             if (item.source == Source.LOCAL) localContactMenu(item) else confirmDial(item.number, item.name)
@@ -954,7 +994,7 @@ class MainActivity : ComponentActivity() {
         dialog.dismiss()
     }
 
-    private fun confirmDial(raw: String, name: String = "") {
+    internal fun confirmDial(raw: String, name: String = "") {
         val display = name.ifBlank { raw }
         AlertDialog.Builder(this).setTitle("Call $display?")
             .setMessage(if (display == raw) null else raw)
@@ -1064,6 +1104,20 @@ class MainActivity : ComponentActivity() {
         }
         generator.startTone(tone, 110)
     }
+    private fun playCallTone(digit: Char) {
+        if (!prefs.dialpadTones) return
+        val tone = when (digit) {
+            in '0'..'9' -> ToneGenerator.TONE_DTMF_0 + (digit - '0')
+            '*' -> ToneGenerator.TONE_DTMF_S
+            '#' -> ToneGenerator.TONE_DTMF_P
+            else -> return
+        }
+        val generator = callToneGenerator ?: try {
+            ToneGenerator(AudioManager.STREAM_VOICE_CALL, 15).also { callToneGenerator = it }
+        } catch (_: RuntimeException) { return }
+        generator.startTone(tone, 100)
+    }
+
     private fun erase(input: EditText) {
         val a = input.selectionStart.takeIf { input.hasFocus() && it >= 0 } ?: input.length()
         val b = input.selectionEnd.takeIf { input.hasFocus() && it >= 0 } ?: a

@@ -10,8 +10,8 @@ android {
         applicationId = "org.sippy"
         minSdk = 28
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.1.6"
+        versionCode = 10
+        versionName = "1.1.7"
         testInstrumentationRunner = "org.sippy.SettingsChecks"
         providers.gradleProperty("targetAbi").orNull?.let { abi ->
             require(abi in setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")) { "Unsupported targetAbi: $abi" }
@@ -27,6 +27,7 @@ android {
 kotlin { jvmToolchain(21); compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
 
 dependencies {
+    implementation("com.unboundid:unboundid-ldapsdk:7.0.6")
     implementation("androidx.activity:activity:1.13.0")
     val customSdk = providers.gradleProperty("sipSdkAar").orNull
     implementation(if (customSdk == null) "org.linphone:linphone-sdk-android:5.4.127" else files(customSdk))

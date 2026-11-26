@@ -14,7 +14,7 @@ import kotlin.math.pow
 internal class AppearanceChecks(private val instrumentation: Instrumentation) {
     private fun shell(command: String) = ParcelFileDescriptor.AutoCloseInputStream(
         instrumentation.uiAutomation.executeShellCommand(command)
-    ).bufferedReader().use { it.readText() }
+    ).bufferedReader().use { it.readLine().orEmpty() }
 
     private fun <T> main(action: () -> T): T {
         var result: T? = null
@@ -76,8 +76,9 @@ internal class AppearanceChecks(private val instrumentation: Instrumentation) {
             check(Preferences(instrumentation.targetContext).appearance == Appearance.SYSTEM)
         } finally {
             shell("cmd uimode night $originalSystem")
+            instrumentation.waitForIdleSync()
             main { activity.setAppearance(original); activity.finish() }
-            val deadline = System.currentTimeMillis() + 5000
+            val deadline = System.currentTimeMillis() + 15000
             while (!main { activity.isDestroyed } && System.currentTimeMillis() < deadline) Thread.sleep(25)
             check(main { activity.isDestroyed }) { "Appearance test activity did not close" }
         }

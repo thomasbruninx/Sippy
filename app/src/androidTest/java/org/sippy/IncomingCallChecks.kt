@@ -100,8 +100,12 @@ internal class IncomingCallChecks(private val instrumentation: Instrumentation) 
                     await("Default ringtone did not play on an incoming call", ::playing)
                     check(vibrationActive() == vibrate) { "Incoming vibration did not match its setting" }
                     val incomingId = main { service.state.lines.first { it.phase == Phase.INCOMING }.id }
-                    val notification = activity.getSystemService(NotificationManager::class.java).activeNotifications
-                        .first { it.id == 901 }.notification
+                    val notificationManager = activity.getSystemService(NotificationManager::class.java)
+                    await("Incoming notification was not published") {
+                        notificationManager.activeNotifications.any { it.id == 901 }
+                    }
+                    val notification = checkNotNull(notificationManager.activeNotifications
+                        .firstOrNull { it.id == 901 }?.notification) { "Incoming notification disappeared before its actions were checked" }
                     check(notification.actions.map { it.title.toString() } == listOf("Accept", "Decline"))
                     if (index == 2) {
                         notification.actions.first { it.title.toString() == "Accept" }.actionIntent.send()
@@ -123,6 +127,24 @@ internal class IncomingCallChecks(private val instrumentation: Instrumentation) 
                             main { service.state.lines.any { it.id == incomingId && it.phase == Phase.ACTIVE } }
                         }
                         check(!playing() && !vibrationActive()) { "Alerts continued after accepting" }
+                        val feedback = MainActivity::class.java.getDeclaredMethod("playCallTone", Char::class.javaPrimitiveType).apply { isAccessible = true }
+                        val generator = MainActivity::class.java.getDeclaredField("callToneGenerator").apply { isAccessible = true }
+                        val oldTones = prefs.dialpadTones
+                        try {
+                            main {
+                                prefs.dialpadTones = false
+                                feedback.invoke(activity, '1')
+                                check(generator.get(activity) == null) { "Disabled DTMF feedback played a tone" }
+                                prefs.dialpadTones = true
+                                for (digit in "12*#") {
+                                    service.digits(incomingId, digit)
+                                    feedback.invoke(activity, digit)
+                                }
+                                check(generator.get(activity) != null) { "In-call DTMF feedback did not create audio" }
+                                check(service.state.lines.any { it.id == incomingId && it.phase == Phase.ACTIVE })
+                            }
+                        } finally { main { prefs.dialpadTones = oldTones } }
+
                         val earpiece = main { (coreField.get(service) as Core).extendedAudioDevices.firstOrNull { it.type == AudioDevice.Type.Earpiece } }
                         if (earpiece != null && activity.getSystemService(PowerManager::class.java)
                                 .isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) {
@@ -155,6 +177,9 @@ internal class IncomingCallChecks(private val instrumentation: Instrumentation) 
                     await("Declined call did not end") { main { service.state.lines.isEmpty() } }
                     check(!proximityHeld()) { "Ending the call did not release proximity protection" }
                     check(!playing()) { "Ringtone continued after declining the call" }
+                    await("Incoming notification was not removed after the call") {
+                        notificationManager.activeNotifications.none { it.id == 901 }
+                    }
                     await("Vibration continued after declining the call") { !vibrationActive() }
                     await("Ending the call stopped background availability") {
                         activity.getSystemService(NotificationManager::class.java).activeNotifications.any { it.id == 900 }

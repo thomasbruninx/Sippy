@@ -7,6 +7,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Switch
 import android.os.PowerManager
+import android.security.KeyChain
 
 internal class SettingsScreen(private val activity: MainActivity) {
     private val ui = activity.ui
@@ -21,7 +22,7 @@ internal class SettingsScreen(private val activity: MainActivity) {
             addView(ui.heading("Settings"), ui.weight())
             addView(ui.action("Event log", "history", click = activity::openEventLog))
         })
-        val pages = listOf("Account", "Network", "Codecs", "Phonebook", "Sounds", "Application")
+        val pages = listOf("Account", "Network", "Codecs", "Phonebook", "Sounds", "Application", "LDAP")
         activity.settingsTab = activity.settingsTab.coerceIn(pages.indices)
         addView(ui.labelled("Settings page", ui.row(8).apply {
             background = ui.ripple(Palette.surface, 12, Palette.border)
@@ -57,8 +58,83 @@ internal class SettingsScreen(private val activity: MainActivity) {
             3 -> phonebook(content)
             4 -> sounds(content)
             5 -> application(content)
+            6 -> ldap(content)
         }
         addView(activity.scroll(content), LinearLayout.LayoutParams(-1, 0, 1f))
+    }
+
+    private fun ldap(content: LinearLayout) = with(content) {
+        val config = activity.prefs.ldap()
+        addView(ui.heading("LDAP directory", "Company contacts appear separately under Contacts → LDAP directory. Passwords are stored encrypted on this device."))
+        val enabled = toggle("Enable LDAP directory", activity.prefs.ldapEnabled)
+        addView(enabled)
+        addView(ui.text("Show the LDAP directory selector in Contacts. Turning this off keeps your saved connection settings.", 13, Palette.secondary))
+        val host = addField("Server", config.host, uriType, "ldap.example.com")
+        val port = addField("Port", config.port.toString(), InputType.TYPE_CLASS_NUMBER)
+        val protocol = select("Connection", listOf("LDAPS", "LDAP with StartTLS"), if (config.tls) 0 else 1)
+        fun certificateText() = "Client certificate: ${activity.prefs.ldapCertificateAlias.ifEmpty { "None" }}"
+        val certificate = ui.text(certificateText(), 14, Palette.secondary)
+        addView(certificate)
+        activity.refreshSettingsStatus = { certificate.text = certificateText() }
+        addView(ui.action("Choose client certificate", fill = Palette.surface, outlined = true) {
+            KeyChain.choosePrivateKeyAlias(activity, { alias ->
+                if (alias != null) {
+                    activity.prefs.ldapCertificateAlias = alias
+                    activity.runOnUiThread {
+                        if (!activity.isDestroyed && certificate.isAttachedToWindow) certificate.text = certificateText()
+                    }
+                } else activity.runOnUiThread {
+                    if (!activity.isDestroyed && certificate.isAttachedToWindow)
+                        activity.message("No certificate selected. If none were offered, use Install client certificate first.")
+                }
+            }, null, null, host.value().ifBlank { null }, port.value().toIntOrNull() ?: -1,
+                activity.prefs.ldapCertificateAlias.ifEmpty { null })
+        })
+        addView(ui.action("Install client certificate", fill = Palette.surface, outlined = true) {
+            runCatching { activity.startActivity(KeyChain.createInstallIntent()) }.onFailure {
+                activity.message("Open Android's security settings to install a client .p12/.pfx certificate, then choose it here.")
+            }
+        })
+        addView(ui.action("Clear client certificate", fill = Palette.surface, outlined = true) {
+            activity.prefs.ldapCertificateAlias = ""
+            certificate.text = certificateText()
+        })
+        addView(ui.text("Optional. Install a .p12/.pfx certificate through Android, then choose it here. Selection is saved immediately. Keep None for password-only access. The server certificate is still verified.", 13, Palette.secondary))
+        val bind = addField("Bind DN / user", config.bindDn)
+        val password = addField("LDAP password", config.password, passwordType)
+        val base = addField("Search base", config.baseDn)
+        val filter = addField("Search filter", config.filter)
+        val names = addField("Name attributes (in preference order)", config.nameAttributes)
+        val phones = addField("Number attributes", config.phoneAttributes)
+        addView(ui.text("For RingCentral, use name attributes displayName,cn,givenName,sn and number attribute telephoneNumber. StartTLS usually uses port 389; LDAPS uses 636. Leave bind DN and password empty for anonymous access.", 13, Palette.secondary))
+        val status = ui.text("", 13, Palette.secondary)
+        fun current() = LdapConfig(host.value(), port.number("LDAP port"), protocol() == 0,
+            bind.value(), password.text.toString(), base.value(), filter.value(), names.value(), phones.value(), activity.prefs.ldapCertificateAlias).also { it.validate() }
+        addView(ui.action("Save LDAP settings") {
+            runCatching { activity.prefs.saveLdap(current()) }.fold({ status.text = "LDAP settings saved." }, { status.text = LdapDirectory.error(it) })
+        })
+        val test = ui.action("Test LDAP connection", fill = Palette.surface, outlined = true) {}
+        test.isEnabled = activity.prefs.ldapEnabled
+        enabled.setOnCheckedChangeListener { _, checked ->
+            activity.setLdapEnabled(checked)
+            test.isEnabled = checked
+            status.text = if (checked) "" else "LDAP directory is disabled. Saved settings are kept."
+        }
+        test.setOnClickListener {
+            val value = runCatching { current() }.getOrElse { status.text = LdapDirectory.error(it); return@setOnClickListener }
+            test.isEnabled = false
+            status.text = "Connecting and searching LDAP…"
+            val task = LdapTask(activity)
+            activity.ldapTask?.close()
+            activity.ldapTask = task
+            task.search(value, "") { result ->
+                test.isEnabled = true
+                status.text = result.fold({ "Connected. Found ${it.contacts.size} numbers${if (it.limited) " (limited results)" else ""}." }, LdapDirectory::error)
+                task.close()
+            }
+        }
+        addView(test)
+        addView(status)
     }
 
     private fun application(content: LinearLayout) = with(content) {

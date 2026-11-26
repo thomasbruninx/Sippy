@@ -119,6 +119,35 @@ internal class Preferences(context: Context) {
             .putBoolean("ipv6", profile.ipv6).apply()
     }
 
+    var ldapEnabled: Boolean
+        get() = data.getBoolean("ldapEnabled", false)
+        set(value) { data.edit().putBoolean("ldapEnabled", value).apply() }
+
+    var ldapCertificateAlias: String
+        get() = data.getString("ldapClientCertificateAlias", "").orEmpty()
+        set(value) { data.edit().putString("ldapClientCertificateAlias", value).apply() }
+
+    fun ldap(): LdapConfig = LdapConfig(
+        host = data.getString("ldapHost", "").orEmpty(), port = data.getInt("ldapPort", 636),
+        tls = data.getBoolean("ldapTls", true), bindDn = data.getString("ldapBindDn", "").orEmpty(),
+        password = loadPassword("ldapPasswordCipher"), baseDn = data.getString("ldapBaseDn", "").orEmpty(),
+        filter = data.getString("ldapFilter", "(objectClass=*)").orEmpty(),
+        nameAttributes = data.getString("ldapNames", "displayName,cn,givenName,sn").orEmpty(),
+        phoneAttributes = data.getString("ldapPhones", "telephoneNumber,mobile,homePhone,ipPhone").orEmpty(),
+        clientCertificateAlias = ldapCertificateAlias,
+    )
+
+    fun saveLdap(config: LdapConfig) {
+        config.validate()
+        val encrypted = config.password.takeIf(String::isNotEmpty)?.let(::encrypt)
+        data.edit().putString("ldapHost", config.host).putInt("ldapPort", config.port)
+            .putBoolean("ldapTls", config.tls).putString("ldapBindDn", config.bindDn)
+            .putString("ldapPasswordCipher", encrypted).putString("ldapBaseDn", config.baseDn)
+            .putString("ldapFilter", config.filter).putString("ldapNames", config.nameAttributes)
+            .putString("ldapPhones", config.phoneAttributes)
+            .putString("ldapClientCertificateAlias", config.clientCertificateAlias).apply()
+    }
+
     fun codecs(): List<Codec> {
         val byId = defaultCodecs.associateBy { it.id }
         val saved = JSONArray(data.getString("codecs", "[]"))
@@ -154,8 +183,8 @@ internal class Preferences(context: Context) {
         return Base64.encodeToString(cipher.iv + cipher.doFinal(value.toByteArray()), Base64.NO_WRAP)
     }
 
-    private fun loadPassword(): String {
-        val encrypted = data.getString("passwordCipher", null) ?: return ""
+    private fun loadPassword(key: String = "passwordCipher"): String {
+        val encrypted = data.getString(key, null) ?: return ""
         return runCatching {
             val bytes = Base64.decode(encrypted, Base64.NO_WRAP)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")

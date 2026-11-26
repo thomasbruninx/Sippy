@@ -246,7 +246,7 @@ class SipService : Service() {
             val engine = f.createCore(null, null, applicationContext)
             initialized = engine
             core = engine
-            engine.setUserAgent("Sippy", "1.1.6")
+            engine.setUserAgent("Sippy", "1.1.7")
             engine.setMaxCalls(4)
             engine.setKeepAliveEnabled(true)
             engine.setAutoIterateEnabled(true)
