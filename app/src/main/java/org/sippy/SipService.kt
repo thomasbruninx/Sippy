@@ -433,6 +433,7 @@ class SipService : Service() {
                     val params = requireNotNull(engine.createCallParams(null)).apply { setVideoEnabled(false) }
                     val call = engine.inviteAddressWithParams(target, params) ?: error("Could not start the call.")
                     launched = true
+                    prefs.lastDialedNumber = raw
                     selected = call.nativePointer
                     if (source != null && find(consultSource) != null) consultation = Consultation(consultSource, call.nativePointer)
                 } finally {

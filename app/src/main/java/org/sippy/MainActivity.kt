@@ -513,11 +513,18 @@ class MainActivity : ComponentActivity() {
         addView(ui.row(8).apply {
             addView(ui.action("Clear", fill = Palette.surface, outlined = true) { input.text.clear() })
             addView(ui.action("Contacts", "contacts", outlined = true, fill = Palette.surface) {
-                chooseDestination("Call a contact", "Call", fromPhonebook = true) { dial(it) }
+                chooseDestination("Call a contact", "Call", contactsOnly = true) { dial(it) }
             }, ui.weight())
             addView(ui.action("Call", "call", Palette.accent, Palette.onAccent) {
+                if (number.isBlank()) {
+                    val last = prefs.lastDialedNumber
+                    if (last.isEmpty()) return@action message("No previously dialed number.")
+                    input.setText(last)
+                    input.setSelection(input.length())
+                    return@action
+                }
                 val target = dialTarget(number) ?: return@action message("Enter a number or SIP address.")
-                dial(target)
+                dial(target, clearDialer = true)
             }, ui.weight())
             val back = ui.action("", "backspace", outlined = true, fill = Palette.surface) { erase(input) }.apply {
                 contentDescription = "Delete last digit"
@@ -665,13 +672,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun dial(target: String, consultation: Long? = null) {
+    private fun dial(target: String, consultation: Long? = null, clearDialer: Boolean = false) {
         val engine = service ?: return message("SIP is still starting.")
         if (!snapshot.ready) {
             message(snapshot.status)
             return
         }
         withMicrophone {
+            if (clearDialer) {
+                number = ""
+                dialerInput?.text?.clear()
+            }
             openCall()
             engine.dial(target, consultation)
         }
@@ -937,15 +948,15 @@ class MainActivity : ComponentActivity() {
         dialogDirectoryRefreshers.toList().forEach { it() }
     }
 
-    private fun chooseDestination(title: String, verb: String, fromPhonebook: Boolean = false, selected: (String) -> Unit) {
+    private fun chooseDestination(title: String, verb: String, contactsOnly: Boolean = false, selected: (String) -> Unit) {
         val content = padded(8)
         val tabs = ui.row(6)
         val targetArea = FrameLayout(this)
-        content.addView(tabs)
+        if (!contactsOnly) content.addView(tabs)
         content.addView(targetArea, LinearLayout.LayoutParams(-1, 0, 1f))
         content.minimumHeight = ui.dp(412)
         val dialog = AlertDialog.Builder(this).setTitle(title).setView(content).setNegativeButton("Cancel", null).create()
-        var contactMode = fromPhonebook
+        var contactMode = contactsOnly
         var remembered = ""
         var destinationInput: EditText? = null
         var refreshDirectory: (() -> Unit)? = null
@@ -958,7 +969,7 @@ class MainActivity : ComponentActivity() {
             destinationInput = null
             tabs.removeAllViews()
             targetArea.removeAllViews()
-            listOf("Dialpad", "Phonebooks").forEachIndexed { index, label ->
+            if (!contactsOnly) listOf("Dialpad", "Phonebooks").forEachIndexed { index, label ->
                 tabs.addView(ui.action(label, if (index == 0) "dial" else "contacts",
                     if ((index == 1) == contactMode) Palette.soft else Palette.surface, outlined = true) {
                     contactMode = index == 1

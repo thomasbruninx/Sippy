@@ -10,6 +10,8 @@ Basic usage instructions and feature description for Sippy.
 
 Active calls use a foreground microphone service and can continue when you switch apps. Tap the ongoing notification to return to the call. Incoming call notifications include **Accept** and **Decline** actions. Accept opens the call screen and answers after microphone permission is granted, if needed.
 
+Starting a call from the dialer clears the number field. Press **Call** with an empty field to restore the last dialed number without placing a call; press **Call** again to dial it. The last dialed number is remembered across app restarts.
+
 ## Background incoming calls
 
 **Settings → Application → Background calls** controls reception after closing the app and startup after a phone restart. Both options are on by default once an account is saved. A persistent notification keeps the SIP connection available when the activity is closed or swiped from Recents. After a reboot, Sippy reconnects after the phone is unlocked; app updates also restore background reception. Idle availability does not use the microphone. Ending the last call returns the service to listening for new calls instead of stopping it.

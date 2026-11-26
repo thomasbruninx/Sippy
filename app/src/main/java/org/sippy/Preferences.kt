@@ -72,6 +72,10 @@ internal class Preferences(context: Context, private val useManaged: Boolean = t
     val data = if (useManaged) ManagedPreferences(local) else local
     fun isManaged(key: String) = useManaged && ManagedConfiguration.isManaged(key)
 
+    var lastDialedNumber: String
+        get() = data.getString("lastDialedNumber", "").orEmpty()
+        set(value) { data.edit().putString("lastDialedNumber", value).apply() }
+
     var backgroundCalling: Boolean
         get() = data.getBoolean("backgroundCalling", true)
         set(value) { data.edit().putBoolean("backgroundCalling", value).apply() }
