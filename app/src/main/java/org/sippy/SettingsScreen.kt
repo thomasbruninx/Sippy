@@ -22,20 +22,22 @@ internal class SettingsScreen(private val activity: MainActivity) {
             addView(ui.heading("Settings"), ui.weight())
             addView(ui.action("Event log", "history", click = activity::openEventLog))
         })
-        val pages = listOf("Account", "Network", "Codecs", "Phonebook", "Sounds", "Application", "LDAP")
-        activity.settingsTab = activity.settingsTab.coerceIn(pages.indices)
+        val pageIds = listOf(5, 0, 1, 2, 4, 3, 6)
+        val pages = listOf("Application", "Account(s)", "Network", "Codecs", "Sounds", "Phonebook", "LDAP")
+        if (activity.settingsTab !in pageIds) activity.settingsTab = 5
+        val selectedPage = pageIds.indexOf(activity.settingsTab)
         addView(ui.labelled("Settings page", ui.row(8).apply {
             background = ui.ripple(Palette.surface, 12, Palette.border)
             minimumHeight = ui.dp(49)
             setPadding(ui.dp(13), 0, ui.dp(12), 0)
-            addView(ui.text(pages[activity.settingsTab], 15, weight = true), ui.weight())
+            addView(ui.text(pages[selectedPage], 15, weight = true), ui.weight())
             addView(Symbol(activity, "down", Palette.accent), LinearLayout.LayoutParams(ui.dp(20), ui.dp(20)))
-            contentDescription = "Settings page: ${pages[activity.settingsTab]}"
+            contentDescription = "Settings page: ${pages[selectedPage]}"
             isFocusable = true
             setOnClickListener {
                 activity.popup(this, pages) { selected ->
-                    if (selected != activity.settingsTab) {
-                        activity.settingsTab = selected
+                    if (pageIds[selected] != activity.settingsTab) {
+                        activity.settingsTab = pageIds[selected]
                         activity.renderPage()
                     }
                 }
@@ -228,7 +230,30 @@ internal class SettingsScreen(private val activity: MainActivity) {
     }
 
     private fun account(content: LinearLayout) = with(content) {
-        addView(ui.heading("SIP account", "Connect an extension from your provider or PBX."))
+        addView(ui.heading("SIP accounts", "Configured accounts stay registered together. Select the account to edit or use for outgoing calls."))
+        addView(activity.accountSelector())
+        val selected = activity.prefs.selectedAccount()
+        addView(ui.row(7).apply {
+            addView(ui.action("Add account", "plus", fill = Palette.surface, outlined = true) { accountName() }, ui.weight())
+            if (!selected.managed) {
+                addView(ui.action("Rename", fill = Palette.surface, outlined = true) { accountName(rename = true) }, ui.weight())
+                addView(ui.action("Delete", fill = Palette.surface, outlined = true) {
+                    if (!accountIdle()) return@action
+                    android.app.AlertDialog.Builder(activity).setTitle("Delete ${selected.name}?")
+                        .setMessage("Remove this SIP account and its saved credentials?")
+                        .setNegativeButton("Cancel", null).setPositiveButton("Delete") { _, _ ->
+                            if (accountIdle()) runCatching {
+                                activity.prefs.removeAccount(); activity.sip?.configure(); activity.renderPage()
+                            }.onFailure { activity.message(it.localizedMessage ?: "Could not delete account.") }
+                        }.show()
+                }, ui.weight())
+            }
+        })
+        if (selected.managed) addView(ui.text("This account is provided by your organization. Fields marked Managed are locked; other settings can be edited.", 13, Palette.secondary))
+        val statuses = ui.text("", 13, Palette.secondary)
+        activity.refreshSettingsStatus = { statuses.text = activity.sipState.accounts.joinToString("\n") { "${it.name}: ${it.status}" } }
+        activity.refreshSettingsStatus?.invoke()
+        addView(statuses)
         val user = addField("Username / extension", profile.username, uriType, managedKey = "username")
         val domain = addField("SIP domain", profile.domain, uriType, "pbx.example.com", managedKey = "domain")
         val password = addField("Password", profile.password, passwordType, managedKey = "password").apply {
@@ -258,7 +283,31 @@ internal class SettingsScreen(private val activity: MainActivity) {
         })
     }
 
+    private fun accountIdle(): Boolean {
+        if (activity.sipState.lines.isEmpty()) return true
+        activity.message("End all calls before changing SIP accounts.")
+        return false
+    }
+
+    private fun accountName(rename: Boolean = false) {
+        if (!accountIdle()) return
+        val input = ui.field("Account name", if (rename) activity.prefs.selectedAccount().name else "")
+        val dialog = android.app.AlertDialog.Builder(activity).setTitle(if (rename) "Rename account" else "Add SIP account")
+            .setView(ui.column().apply { ui.pad(this, 20); addView(input) })
+            .setNegativeButton("Cancel", null).setPositiveButton("Save", null).show()
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            if (accountIdle()) runCatching {
+                if (rename) activity.prefs.renameAccount(input.value()) else activity.prefs.addAccount(input.value())
+                activity.sip?.configure()
+                dialog.dismiss()
+                activity.renderPage()
+            }.onFailure { input.error = it.localizedMessage ?: "Could not save account." }
+        }
+    }
+
     private fun network(content: LinearLayout) = with(content) {
+        addView(activity.accountSelector())
+        addView(ui.text("Transport, STUN and ICE apply to the selected account. Device audio, codecs, encryption and listening ports are shared by all accounts.", 13, Palette.secondary))
         addView(ui.heading("Network and media", "Configure transport, NAT traversal, and in-call signaling."))
         val transports = Transport.entries
         val transport = select("SIP transport", transports.map { it.name }, profile.transport.ordinal, managedKey = "transport")
@@ -286,6 +335,47 @@ internal class SettingsScreen(private val activity: MainActivity) {
                     ipv6 = ipv6.isChecked, localPort = sip.number("SIP port"), rtpPort = rtp.number("RTP port"))
             }
         })
+        dndBehaviour(content)
+    }
+
+    private fun dndBehaviour(content: LinearLayout) = with(content) {
+        val selected = activity.prefs.selectedAccount()
+        val config = selected.dnd
+        addView(ui.heading("DND behaviour", "DND settings for ${selected.name}. Server synchronization requires support from your SIP provider."))
+        val show = toggle("Show DND", config.show, managedKey = "dndShow")
+        addView(show)
+        addView(ui.text("When disabled, hide the dialer button and disable local DND and server synchronization for this account.", 13, Palette.secondary))
+        val reason = toggle("RFC 3326 reason header", config.reasonHeader, managedKey = "dndReasonHeader")
+        addView(reason)
+        val facArea = ui.column(12)
+        val featureArea = ui.column(12)
+        fun mode(index: Int) {
+            facArea.visibility = if (DndServerSync.entries[index] == DndServerSync.FAC) View.VISIBLE else View.GONE
+            featureArea.visibility = if (DndServerSync.entries[index] == DndServerSync.AS_FEATURE_EVENT) View.VISIBLE else View.GONE
+        }
+        val sync = select("Server-Sync (Shared Presence & BLF)", DndServerSync.entries.map { it.label }, config.serverSync.ordinal,
+            managedKey = "dndServerSync", onSelected = ::mode)
+        val facOn = facArea.addField("DND enable code", config.facOn, managedKey = "dndFacOn")
+        val facOff = facArea.addField("DND disable code", config.facOff, managedKey = "dndFacOff")
+        val facMethod = facArea.select("FAC signaling", DndFacMethod.entries.map { "SIP ${it.name}" }, config.facMethod.ordinal, managedKey = "dndFacMethod")
+        facArea.addView(ui.text("INVITE uses inactive audio and no dialer UI, and waits until current calls end. MESSAGE sends a text SIP request without opening an audio call.", 13, Palette.secondary))
+        val schema = featureArea.select("Feature event schema", DndFeatureSchema.entries.map { it.label }, config.featureSchema.ordinal, managedKey = "dndFeatureSchema")
+        addView(facArea); addView(featureArea); mode(config.serverSync.ordinal)
+        val priority = toggle("Emergency / Priority Exception", config.priorityException, managedKey = "dndPriorityException")
+        addView(priority)
+        addView(ui.text("Allow incoming calls carrying Priority: emergency to bypass local DND. This uses the caller-provided SIP header; it does not verify the caller's identity.", 13, Palette.secondary))
+        val status = ui.text("", 13, Palette.secondary)
+        activity.refreshSettingsStatus = { status.text = "Server sync: ${activity.sip?.dndSyncStatus(selected.id) ?: "SIP is starting"}" }
+        activity.refreshSettingsStatus?.invoke()
+        addView(status)
+        addView(ui.action("Save DND behaviour") {
+            runCatching {
+                activity.prefs.saveDnd(DndSettings(show.isChecked, reason.isChecked, DndServerSync.entries[sync()],
+                    facOn.value(), facOff.value(), DndFacMethod.entries[facMethod()], DndFeatureSchema.entries[schema()], priority.isChecked))
+                activity.sip?.updateDndBehaviour()
+                activity.message("DND behaviour saved.")
+            }.onFailure { activity.message(it.localizedMessage ?: "Could not save DND behaviour.") }
+        }.apply { isEnabled = DndSettings.keys.any { !activity.prefs.isManaged(it) } })
     }
 
     private fun saveSip(validateAccount: Boolean = true, build: () -> SipProfile) {

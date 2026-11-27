@@ -19,11 +19,13 @@ class SettingsChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
-            if (checks in setOf("ldap", "calls", "transfer", "mdm")) {
+            if (checks in setOf("ldap", "calls", "transfer", "mdm", "accounts", "dnd")) {
                 when (checks) {
                     "ldap" -> LdapChecks(this).run()
                     "transfer" -> TransferModeChecks(this).run()
                     "mdm" -> ManagedConfigurationChecks(this).run()
+                    "accounts" -> AccountChecks(this).run()
+                    "dnd" -> DndChecks(this).run()
                     else -> IncomingCallChecks(this).run()
                 }
                 result.putString("stream", "Passed: $checks checks.\n")

@@ -6,7 +6,7 @@ import android.content.SharedPreferences
 internal class ManagedPreferences(private val local: SharedPreferences) : SharedPreferences by local {
     private fun values() = ManagedConfiguration.values
     private fun locked(key: String) = ManagedConfiguration.isManaged(key)
-    override fun getAll(): Map<String, *> = local.all + values().filterKeys { it !in setOf("password", "ldapPassword") }
+    override fun getAll(): Map<String, *> = local.all + values().filterKeys { it !in setOf("password", "ldapPassword", "sipAccounts") }
     override fun contains(key: String) = values().containsKey(key) || local.contains(key)
     override fun getString(key: String, defValue: String?): String? =
         if (values().containsKey(key)) values()[key] as String? else local.getString(key, defValue)

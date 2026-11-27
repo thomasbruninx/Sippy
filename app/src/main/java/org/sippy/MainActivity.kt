@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
     private var ldapContacts = false
     internal var ldapQuery = ""
     private var callToneGenerator: ToneGenerator? = null
-    internal var settingsTab = 0
+    internal var settingsTab = 5
     private val handler = Handler(Looper.getMainLooper())
 
     internal val sip get() = service
@@ -134,6 +134,7 @@ class MainActivity : ComponentActivity() {
                 onChange = ::changed
                 onMessage = ::message
             }
+            service!!.applyManagedConfiguration()
             changed(service!!.state)
             answerFromNotification()
         }
@@ -151,12 +152,13 @@ class MainActivity : ComponentActivity() {
         ui = Ui(this)
         directory = Directory(this)
         page = Page.entries.getOrNull(savedInstanceState?.getInt("page") ?: 0) ?: Page.DIALER
-        settingsTab = savedInstanceState?.getInt("settingsTab") ?: 0
+        settingsTab = savedInstanceState?.getInt("settingsTab") ?: 5
         ldapContacts = savedInstanceState?.getBoolean("ldapContacts") ?: false
         ldapQuery = savedInstanceState?.getString("ldapQuery").orEmpty()
         showEvents = savedInstanceState?.getBoolean("showEvents") == true
         number = savedInstanceState?.getString("number").orEmpty()
         settingsFiles.includePassword = savedInstanceState?.getBoolean("exportPassword") == true
+        settingsFiles.exportAccountId = savedInstanceState?.getString("exportAccountId")
         permissionsInFlight = savedInstanceState?.getBoolean("permissionsInFlight") == true
         val notificationIntentAnswer = takeNotificationAnswer(intent)
         pendingNotificationAnswer = savedInstanceState?.getLong("notificationAnswer")?.takeIf { it != 0L }
@@ -282,6 +284,7 @@ class MainActivity : ComponentActivity() {
         outState.putBoolean("showEvents", showEvents)
         outState.putString("number", number)
         outState.putBoolean("exportPassword", settingsFiles.includePassword)
+        outState.putString("exportAccountId", settingsFiles.exportAccountId)
         outState.putBoolean("permissionsInFlight", permissionsInFlight)
         outState.putBoolean("call", showCall)
         outState.putLong("notificationAnswer", pendingNotificationAnswer ?: 0L)
@@ -352,7 +355,8 @@ class MainActivity : ComponentActivity() {
             renderPage(keepCallScroll = oldVisible && showCall && !closing && previous.selected == newState.selected)
         }
         if (page == Page.SETTINGS && !showEvents && settingsTab == 2 && previous.availableCodecs != newState.availableCodecs) renderPage()
-        if (page == Page.SETTINGS && !showEvents && settingsTab == 5) refreshSettingsStatus?.invoke()
+        if (page == Page.SETTINGS && !showEvents && settingsTab in setOf(0, 1, 5)) refreshSettingsStatus?.invoke()
+        if (page == Page.DIALER && (previous.outgoingAccountId != newState.outgoingAccountId || previous.outgoingAccountName != newState.outgoingAccountName || previous.dndAccounts != newState.dndAccounts)) renderPage()
         topStatus.text = newState.status
         topStatus.contentDescription = if (newState.registrationDetail != null) {
             "${newState.status}. Tap for details."
@@ -465,13 +469,48 @@ class MainActivity : ComponentActivity() {
         dialerInput = null
         body.removeAllViews()
         val view = when (page) {
-            Page.DIALER -> if (showCall && snapshot.lines.isNotEmpty()) scroll(callScreen()) else scroll(dialer())
+            Page.DIALER -> scroll(ui.column(10).apply {
+                addView(accountSelector().apply { setPadding(ui.dp(18), ui.dp(10), ui.dp(18), 0) })
+                addView(if (showCall && snapshot.lines.isNotEmpty()) callScreen() else dialer())
+                if (prefs.selectedAccount().dnd.show) addView(ui.column().apply {
+                    setPadding(ui.dp(20), 0, ui.dp(20), ui.dp(16))
+                    addView(ui.action(if (prefs.doNotDisturb) "Do Not Disturb: on" else "Do Not Disturb: off", "dnd",
+                        fill = if (prefs.doNotDisturb) Palette.dangerSoft else Palette.surface,
+                        tint = if (prefs.doNotDisturb) Palette.danger else Palette.accent, outlined = true) {
+                        service?.setDoNotDisturb(!prefs.doNotDisturb) ?: run { prefs.doNotDisturb = !prefs.doNotDisturb }
+                        renderPage()
+                    }.apply {
+                        isSelected = prefs.doNotDisturb
+                        isEnabled = !prefs.isManaged("doNotDisturb")
+                        contentDescription = "Do Not Disturb ${if (prefs.doNotDisturb) "on" else "off"}. Incoming calls to ${prefs.selectedAccount().name} are declined when enabled."
+                    })
+                })
+            })
             Page.CONTACTS -> contacts()
             Page.HISTORY -> ActivityScreens(this).history(::confirmDial)
             Page.SETTINGS -> if (showEvents) ActivityScreens(this).events() else SettingsScreen(this).build()
         }
         body.addView(view, FrameLayout.LayoutParams(-1, -1))
         if (scrollPosition != null) view.post { view.scrollTo(0, scrollPosition) }
+    }
+
+    internal fun accountSelector(): View {
+        val current = prefs.selectedAccount()
+        val selector = ui.action(current.name + if (current.managed) " · Managed" else "", "down", fill = Palette.surface, outlined = true) {}
+        selector.contentDescription = "Outgoing account: ${current.name}"
+        selector.setOnClickListener {
+            val accounts = prefs.accounts()
+            popup(selector, accounts.map { account ->
+                val status = snapshot.accounts.firstOrNull { it.id == account.id }?.status ?: "Not configured"
+                "${account.name}${if (account.managed) " · Managed" else ""} · $status${if (prefs.dndEnabled(account.id)) " · DND on" else ""}"
+            }) { index ->
+                runCatching {
+                    if (service != null) service!!.selectAccount(accounts[index].id) else prefs.selectAccount(accounts[index].id)
+                    renderPage()
+                }.onFailure { message(it.localizedMessage ?: "Could not select account.") }
+            }
+        }
+        return ui.labelled("Outgoing account", selector)
     }
 
     internal fun openEventLog() {
@@ -567,6 +606,7 @@ class MainActivity : ComponentActivity() {
             ui.pad(this, 18)
             addView(ui.text(line.phase.label, 13, Palette.mint, true))
             addView(ui.text(line.name, 27, Color.WHITE, true))
+            addView(ui.text("Account: ${line.accountName}", 14, Palette.mint))
             if (line.address != line.name) addView(ui.text(line.address, 15, Palette.mint))
             if (line.phase in setOf(Phase.ACTIVE, Phase.HELD, Phase.HOLDING, Phase.REMOTE_HOLD, Phase.RESUMING)) {
                 clockAnchor = android.os.SystemClock.elapsedRealtime()
@@ -674,7 +714,7 @@ class MainActivity : ComponentActivity() {
 
     private fun dial(target: String, consultation: Long? = null, clearDialer: Boolean = false) {
         val engine = service ?: return message("SIP is still starting.")
-        if (!snapshot.ready) {
+        if (!snapshot.ready && consultation == null) {
             message(snapshot.status)
             return
         }

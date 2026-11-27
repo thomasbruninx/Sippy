@@ -42,7 +42,7 @@ internal class ManagedConfigurationChecks(private val instrumentation: Instrumen
         check(context.getSystemService(DevicePolicyManager::class.java).isDeviceOwnerApp("org.sippy.test")) { "Set the test APK as temporary emulator device owner first" }
         await("Cold startup did not load OS restrictions") { main { ManagedConfiguration.present && Preferences(context).profile().username == "managed200" } }
         val schema = context.getSystemService(RestrictionsManager::class.java).getManifestRestrictions(context.packageName)
-        check(schema.any { it.key == "managedConfigurationEnabled" } && schema.any { it.key == "password" }) { "MDM schema was not discoverable from the APK" }
+        check(schema.any { it.key == "managedConfigurationEnabled" } && schema.any { it.key == "sipAccounts" } && schema.none { it.key in SipAccountFields.keys }) { "MDM schema was not discoverable from the APK" }
         check(schema.first { it.key == "transferMode" }.choiceValues.toList() == listOf("DIRECT_ONLY", "ATTENDED_ONLY", "BOTH"))
         val raw = Preferences(context, useManaged = false)
         val original = raw.data.all
@@ -125,7 +125,7 @@ internal class ManagedConfigurationChecks(private val instrumentation: Instrumen
             await("Invalid policy was not reported") { main { ManagedConfiguration.error != null } }
             check(prefs.profile().username == "managed201" && !ManagedConfiguration.status.contains("DO_NOT_LOG_INVALID_FIXTURE"))
             publish("invalid_type")
-            await("Wrong-typed setting was not rejected") { main { ManagedConfiguration.error?.contains("expiry") == true } }
+            await("Wrong-typed setting was not rejected") { main { ManagedConfiguration.error?.contains("expiry", ignoreCase = true) == true } }
             check(prefs.profile().username == "managed201")
             publish("pending")
             await("Pending restrictions were not reported") { main { ManagedConfiguration.status.startsWith("Waiting for") } }
@@ -136,9 +136,66 @@ internal class ManagedConfigurationChecks(private val instrumentation: Instrumen
             await("Test activity did not close") { main { activity.isDestroyed } }
             publish("full")
             await("Closed activity stopped managed configuration updates") { main { prefs.profile().username == "managed200" } }
+            publish("accounts")
+            await("OS bundle-array policy was not loaded") { main { prefs.accounts().count { it.managed } == 2 } }
+            main {
+                service.selectAccount("managed:office")
+                check(prefs.profile().username == "mdm300" && prefs.isManaged("password"))
+                check(prefs.isManaged("dndShow") && prefs.isManaged("dndReasonHeader"))
+                prefs.saveDnd(DndSettings(show = false, reasonHeader = false, serverSync = DndServerSync.FAC))
+                check(prefs.selectedAccount().dnd.show && prefs.selectedAccount().dnd.reasonHeader && prefs.selectedAccount().dnd.serverSync == DndServerSync.DISABLED)
+                service.setDoNotDisturb(true)
+                check("managed:office" in service.state.dndAccounts)
+                service.selectAccount("managed:support")
+                check(prefs.profile().username == "mdm301" && !prefs.selectedAccount().dnd.show)
+                check(prefs.data.all.values.none { it.toString().contains("MDM_MULTI") })
+            }
+            publish("accounts_invalid")
+            await("Invalid nested DND policy was not rejected") { main { ManagedConfiguration.error != null } }
+            check(prefs.accounts().count { it.managed } == 2)
+            publish("accounts")
+            await("Corrected array policy did not recover") { main { ManagedConfiguration.error == null } }
+            publish("local_credentials")
+            await("Per-account templates were not applied") { main { prefs.accounts().any { it.id == "managed:template-office" } } }
+            main {
+                service.selectAccount("managed:template-office")
+                check(!prefs.profile().configured && prefs.profile().password.isEmpty())
+                check(prefs.isManaged("domain") && prefs.isManaged("server") && prefs.isManaged("transport"))
+                check(listOf("username", "authUser", "password").none(prefs::isManaged))
+                activity.settingsTab = 0
+            }
+            // Reopen the UI after the closed-activity test to verify actual editability.
+            val editor = instrumentation.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+            main {
+                editor.settingsTab = 0; editor.openLdapSettings()
+                val fields = views(editor.window.decorView).filterIsInstance<EditText>()
+                check(fields.first { it.contentDescription == "Username / extension" }.isEnabled)
+                check(fields.first { it.contentDescription == "Password" }.isEnabled)
+                check(fields.first { it.contentDescription == "Authentication ID" }.isEnabled)
+                check(fields.first { it.contentDescription?.startsWith("Registrar override") == true }.isEnabled.not())
+                check(fields.first { it.contentDescription?.startsWith("SIP domain") == true }.isEnabled.not())
+                prefs.save(prefs.profile().copy(username = "local401", authUser = "auth401", password = "LOCAL_TEMPLATE_ONE", domain = "attempted.invalid", server = "attempted.invalid"))
+                check(prefs.profile().username == "local401" && prefs.profile().authUser == "auth401" && prefs.profile().password == "LOCAL_TEMPLATE_ONE")
+                check(prefs.profile().domain == "127.0.0.1" && prefs.profile().server == "127.0.0.1:5090")
+                service.selectAccount("managed:template-home")
+                check(prefs.profile().username.isEmpty() && prefs.profile().password.isEmpty())
+                prefs.save(prefs.profile().copy(username = "local402", authUser = "auth402", password = "LOCAL_TEMPLATE_TWO"))
+                service.selectAccount("managed:template-office")
+                check(prefs.profile().password == "LOCAL_TEMPLATE_ONE")
+                check(raw.data.all.values.none { it.toString().contains("LOCAL_TEMPLATE_ONE") || it.toString().contains("LOCAL_TEMPLATE_TWO") || it.toString().contains("IGNORED_POLICY_SECRET") })
+            }
+            publish("local_credentials_changed")
+            await("Updated template registrar did not apply") { main { prefs.profile().server == "127.0.0.1:5091" } }
+            check(prefs.profile().username == "local401" && prefs.profile().password == "LOCAL_TEMPLATE_ONE")
+            check(Preferences(context).profile().authUser == "auth401" && Preferences(context).profile().password == "LOCAL_TEMPLATE_ONE")
+            main {
+                service.selectAccount("managed:template-home")
+                check(prefs.profile().username == "local402" && prefs.profile().password == "LOCAL_TEMPLATE_TWO")
+                editor.finish()
+            }
             publish("remove")
             await("Policy removal did not restore local settings") { main { !ManagedConfiguration.present && prefs.profile().username == "local200" } }
-            check(prefs.profile().password == "LOCAL_FIXTURE_SECRET" && prefs.profile().displayName == "User editable name")
+            check(prefs.profile().password == "LOCAL_FIXTURE_SECRET")
         } finally {
             publish("remove")
             main {

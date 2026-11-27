@@ -54,6 +54,9 @@ internal class ActivityStore(private val context: Context, databaseName: String 
         prune()
     }
 
+    fun event(kind: EventKind, message: String, secrets: List<String>) =
+        event(kind, secrets.filter { it.isNotEmpty() }.fold(message) { text, secret -> text.replace(secret, "[redacted]") })
+
     fun event(kind: EventKind, message: String, secret: String = "") {
         val record = EventRecord(System.currentTimeMillis(), kind, sanitizeLog(message, secret))
         submit {

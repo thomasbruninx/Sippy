@@ -49,6 +49,8 @@ internal class SettingsFiles(private val activity: MainActivity) {
             }.setNegativeButton("Cancel", null).show()
     }
 
+    var exportAccountId: String? = null
+
     fun export() {
         val password = CheckBox(activity).apply {
             text = if (prefs.isManaged("password")) "Password managed by your organization" else "Include SIP password"
@@ -58,8 +60,10 @@ internal class SettingsFiles(private val activity: MainActivity) {
             .setMessage("Exports the saved account, network settings, and codec order. If included, the password is readable in the JSON file.")
             .setView(password).setPositiveButton("Choose file") { _, _ ->
                 includePassword = password.isChecked
+                exportAccountId = prefs.selectedAccount().id
+                val filename = prefs.selectedAccount().name.replace(Regex("[^\\p{L}\\p{N}._ -]"), "_").trim().ifEmpty { "Sippy-account" }
                 open(document(Intent.ACTION_CREATE_DOCUMENT, "application/json")
-                    .putExtra(Intent.EXTRA_TITLE, "Sippy-SIP-settings.json"), EXPORT)
+                    .putExtra(Intent.EXTRA_TITLE, "$filename.json"), EXPORT)
             }.setNegativeButton("Cancel", null).show()
     }
 
@@ -102,7 +106,13 @@ internal class SettingsFiles(private val activity: MainActivity) {
             }
             AUDIO -> importAudio(uri)
             EXPORT -> {
-                val json = SipSettingsJson.encode(prefs.profile(), prefs.codecs(), includePassword && !prefs.isManaged("password"))
+                val account = prefs.accounts().firstOrNull { it.id == exportAccountId } ?: if (exportAccountId == null) prefs.selectedAccount() else {
+                    activity.message("The selected account is no longer available. Export it again.")
+                    includePassword = false; exportAccountId = null
+                    return true
+                }
+                val json = SipSettingsJson.encode(account.profile, prefs.codecs(), includePassword && "password" !in account.managedKeys, account.name, account.dnd)
+                exportAccountId = null
                 includePassword = false
                 work("Could not export SIP settings.") {
                     requireNotNull(activity.contentResolver.openOutputStream(uri, "wt")).use { it.write(json.toByteArray(Charsets.UTF_8)) }
@@ -163,20 +173,28 @@ internal class SettingsFiles(private val activity: MainActivity) {
     private fun confirmImport(backup: SipSettingsBackup) {
         if (!idle()) return
         val p = backup.profile
-        AlertDialog.Builder(activity).setTitle("Import SIP settings?")
-            .setMessage("Replace the saved account, network settings, and codec order with ${p.username.ifBlank { "an empty account" }}${p.domain.takeIf { it.isNotBlank() }?.let { "@$it" }.orEmpty()}?" +
-                if (p.password.isEmpty() && !prefs.isManaged("password")) "\n\nThis file has no password. Enter it after importing." else "")
-            .setPositiveButton("Import") { _, _ ->
-                if (idle()) runCatching {
-                    val available = activity.sipState.availableCodecs
-                    require(available.isEmpty() || backup.codecs.any { it.enabled && it.id in available })
-                    prefs.save(p)
-                    prefs.saveCodecs(backup.codecs)
-                    activity.sip?.configure()
-                    activity.renderPage()
-                    activity.message("SIP settings imported.")
-                }.onFailure { activity.message("Could not apply settings. Check that a supported codec is enabled.") }
-            }.setNegativeButton("Cancel", null).show()
+        val name = activity.ui.field("Account name", backup.name.orEmpty())
+        val fields = activity.ui.column(10).apply {
+            activity.ui.pad(this, 20)
+            addView(activity.ui.text("Import as a new named account. Existing accounts are kept. Device media settings and codec order are shared and will be updated from this file.", 14))
+            addView(activity.ui.labelled("Account name", name))
+            if (p.password.isEmpty()) addView(activity.ui.text("This file has no password. Enter it after importing.", 13, Palette.secondary))
+        }
+        val dialog = AlertDialog.Builder(activity).setTitle("Import SIP account")
+            .setView(fields).setNegativeButton("Cancel", null).setPositiveButton("Import", null).show()
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            if (idle()) runCatching {
+                val available = activity.sipState.availableCodecs
+                require(available.isEmpty() || backup.codecs.any { it.enabled && it.id in available }) { "Enable at least one supported codec." }
+                prefs.addAccount(name.text.toString(), p, backup.dnd)
+                prefs.save(p)
+                prefs.saveCodecs(backup.codecs)
+                activity.sip?.configure()
+                dialog.dismiss()
+                activity.renderPage()
+                activity.message("SIP account imported.")
+            }.onFailure { name.error = it.localizedMessage ?: "Could not import account." }
+        }
     }
 
     private fun saveRingtone(uri: String?, name: String): Boolean {

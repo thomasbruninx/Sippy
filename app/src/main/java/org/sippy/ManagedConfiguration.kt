@@ -54,7 +54,7 @@ internal object ManagedConfiguration {
             val enabled = bundle.get("managedConfigurationEnabled")
             if (enabled != null && enabled !is Boolean) throw Invalid("managedConfigurationEnabled")
             present = enabled == true
-            suppliedKeys = if (present) bundle.keySet().filter { it in types }.map { if (it == "codecOrder") "codecs" else it }.toSet() else emptySet()
+            suppliedKeys = if (present) bundle.keySet().filter { it in types || it == "sipAccounts" }.map { if (it == "codecOrder") "codecs" else it }.toSet() else emptySet()
             val parsed = if (present) decode(context, bundle) else emptyMap()
             values = parsed
             error = null
@@ -83,24 +83,62 @@ internal object ManagedConfiguration {
             if (value is String && value.length > 16384) throw Invalid(key)
             result[key] = value
         }
+        if (bundle.containsKey("sipAccounts")) {
+            val entries = bundle.get("sipAccounts") as? Array<*> ?: throw Invalid("sipAccounts")
+            if (entries.size > 20) throw Invalid("sipAccounts")
+            val accounts = entries.map { entry ->
+                val item = entry as? Bundle ?: throw Invalid("sipAccounts")
+                val id = item.get("id") as? String ?: throw Invalid("sipAccounts.id")
+                if (!id.matches(Regex("[A-Za-z0-9_.-]{1,64}"))) throw Invalid("sipAccounts.id")
+                val name = runCatching { SipAccountFields.name(item.get("name") as? String ?: "") }
+                    .getOrElse { throw Invalid("sipAccounts.name") }
+                val localCredentials = item.get("accountLocalCredentials") ?: false
+                if (localCredentials !is Boolean) throw Invalid("sipAccounts.accountLocalCredentials")
+                val credentialKeys = setOf("username", "authUser", "password")
+                val fields = JSONObject()
+                SipAccountFields.keys.filterNot { localCredentials && it in credentialKeys }.forEach { key ->
+                    val nestedKey = "account" + key.replaceFirstChar { it.uppercase() }
+                    if (item.containsKey(nestedKey)) {
+                        val value = item.get(nestedKey)
+                        if (accountTypes[key]?.isInstance(value) != true || value is String && value.length > 16384) throw Invalid("sipAccounts.$key")
+                        fields.put(key, value)
+                    }
+                }
+                val profile = runCatching { SipAccountFields.decode(fields) }
+                    .getOrElse { throw Invalid("sipAccounts.settings") }
+                val dndJson = JSONObject()
+                DndSettings.keys.forEach { key ->
+                    val nestedKey = "account" + key.replaceFirstChar { it.uppercase() }
+                    if (item.containsKey(nestedKey)) {
+                        val field = key.removePrefix("dnd").replaceFirstChar { it.lowercase() }
+                        val value = item.get(nestedKey)
+                        if (field in setOf("show", "reasonHeader", "priorityException") && value !is Boolean ||
+                            field !in setOf("show", "reasonHeader", "priorityException") && value !is String) throw Invalid("sipAccounts.$key")
+                        dndJson.put(field, value)
+                    }
+                }
+                val dnd = runCatching { DndSettings.decode(dndJson) }.getOrElse { throw Invalid("sipAccounts.DND") }
+                val managedKeys = (SipAccountFields.keys + DndSettings.keys).filter { key ->
+                    item.containsKey("account" + key.replaceFirstChar { it.uppercase() }) && !(localCredentials && key in credentialKeys)
+                }.toSet()
+                SipAccountConfig("managed:$id", name, profile, managed = true, dnd = dnd, managedKeys = managedKeys)
+            }
+            if (accounts.map { it.id }.distinct().size != accounts.size ||
+                accounts.map { it.name.lowercase(java.util.Locale.ROOT) }.distinct().size != accounts.size) throw Invalid("sipAccounts")
+            val conflicts = accounts.filter { it.profile.configured }.groupBy { SipAccountFields.identity(it.profile) }
+                .values.any { entries -> entries.map { SipAccountFields.credentials(it.profile) }.distinct().size > 1 }
+            if (conflicts) throw Invalid("sipAccounts.credentials")
+            result["sipAccounts"] = accounts
+        }
         fun enum(key: String, choices: List<String>) {
             if (result.containsKey(key) && result[key] !in choices) throw Invalid(key)
         }
-        enum("transport", Transport.entries.map { it.name }); enum("encryption", Encryption.entries.map { it.name })
+        enum("encryption", Encryption.entries.map { it.name })
         enum("dtmf", Dtmf.entries.map { it.name }); enum("appearance", Appearance.entries.map { it.name })
         enum("transferMode", TransferMode.entries.map { it.name })
         fun range(key: String, bounds: IntRange) { if (key in result && result[key] !in bounds) throw Invalid(key) }
-        range("expiry", 60..86400); range("localPort", 0..65535); range("rtpPort", 0..65534)
+        range("localPort", 0..65535); range("rtpPort", 0..65534)
         range("csvInterval", 15..10080); range("eventRetentionDays", 1..30); range("ldapPort", 1..65535)
-        for (key in listOf("domain", "server", "proxy", "stun")) {
-            val value = result[key] as? String ?: continue
-            if (value.isNotEmpty()) {
-                val uri = runCatching { URI("https://$value") }.getOrNull()
-                if (uri?.host == null || uri.rawUserInfo != null || uri.rawPath.isNotEmpty() || uri.rawQuery != null || uri.rawFragment != null ||
-                    uri.port != -1 && uri.port !in 1..65535) throw Invalid(key)
-            }
-        }
-        (result["username"] as? String)?.let { if (it.isNotEmpty() && !it.matches(Regex("[A-Za-z0-9_.+!~*'%-]+"))) throw Invalid("username") }
         (result.remove("codecOrder") as? String)?.takeIf { it.isNotBlank() }?.let { order ->
             val ids = order.split(',').map { it.trim().lowercase(java.util.Locale.ROOT) }
             if (ids.distinct().size != ids.size || ids.any { id -> Preferences.defaultCodecs.none { it.id == id } }) throw Invalid("codecOrder")
@@ -118,13 +156,8 @@ internal object ManagedConfiguration {
             result["ringtoneName"] = if (text.isEmpty()) "Default ringtone" else "Managed ringtone"
         }
         val local = Preferences(context, useManaged = false)
-        val p = local.profile()
         fun s(key: String, fallback: String) = result[key] as? String ?: fallback
         fun n(key: String, fallback: Int) = result[key] as? Int ?: fallback
-        val sip = p.copy(username = s("username", p.username), domain = s("domain", p.domain), server = s("server", p.server),
-            proxy = s("proxy", p.proxy), stun = s("stun", p.stun), expiry = n("expiry", p.expiry),
-            localPort = n("localPort", p.localPort), rtpPort = n("rtpPort", p.rtpPort))
-        if (runCatching { sip.validate(requireAccount = sip.configured) }.isFailure) throw Invalid("SIP account/network")
         val l = local.ldap()
         val ldap = l.copy(host = s("ldapHost", l.host), port = n("ldapPort", l.port),
             bindDn = s("ldapBindDn", l.bindDn), password = s("ldapPassword", l.password), baseDn = s("ldapBaseDn", l.baseDn),
@@ -150,7 +183,7 @@ internal object ManagedConfiguration {
         }
     }
 
-    private val types: Map<String, Class<*>> = mapOf(
+    private val accountTypes: Map<String, Class<*>> = mapOf(
         "username" to String::class.javaObjectType,
         "authUser" to String::class.javaObjectType,
         "password" to String::class.javaObjectType,
@@ -162,12 +195,16 @@ internal object ManagedConfiguration {
         "transport" to String::class.javaObjectType,
         "register" to Boolean::class.javaObjectType,
         "expiry" to Int::class.javaObjectType,
+        "stun" to String::class.javaObjectType,
+        "ice" to Boolean::class.javaObjectType,
+    )
+
+    private val types: Map<String, Class<*>> = mapOf(
+        "doNotDisturb" to Boolean::class.javaObjectType,
         "localPort" to Int::class.javaObjectType,
         "rtpPort" to Int::class.javaObjectType,
         "encryption" to String::class.javaObjectType,
         "dtmf" to String::class.javaObjectType,
-        "stun" to String::class.javaObjectType,
-        "ice" to Boolean::class.javaObjectType,
         "echo" to Boolean::class.javaObjectType,
         "ipv6" to Boolean::class.javaObjectType,
         "codecOrder" to String::class.javaObjectType,

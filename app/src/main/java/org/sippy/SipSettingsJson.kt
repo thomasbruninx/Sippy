@@ -3,10 +3,10 @@ package org.sippy
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal data class SipSettingsBackup(val profile: SipProfile, val codecs: List<Codec>)
+internal data class SipSettingsBackup(val profile: SipProfile, val codecs: List<Codec>, val name: String? = null, val dnd: DndSettings = DndSettings())
 
 internal object SipSettingsJson {
-    fun encode(profile: SipProfile, codecs: List<Codec>, includePassword: Boolean): String {
+    fun encode(profile: SipProfile, codecs: List<Codec>, includePassword: Boolean, name: String? = null, dnd: DndSettings = DndSettings()): String {
         val account = JSONObject().apply {
             put("username", profile.username); put("authUser", profile.authUser)
             if (includePassword) put("password", profile.password)
@@ -19,12 +19,13 @@ internal object SipSettingsJson {
             put("echoCancellation", profile.echoCancellation); put("ipv6", profile.ipv6)
         }
         return JSONObject().put("format", "sippy-sip-settings").put("version", 1)
-            .put("account", account).put("codecs", JSONArray(codecs.map {
+            .apply { if (name != null) put("name", SipAccountFields.name(name)) }
+            .put("dnd", dnd.json()).put("account", account).put("codecs", JSONArray(codecs.map {
                 JSONObject().put("id", it.id).put("enabled", it.enabled)
             })).toString(2)
     }
 
-    fun decode(text: String): SipSettingsBackup {
+    fun decode(text: String, allowIncomplete: Boolean = false): SipSettingsBackup {
         val root = JSONObject(text)
         require(root.getString("format") == "sippy-sip-settings" && root.get("version") == 1) {
             "Unsupported Sippy settings format."
@@ -42,7 +43,8 @@ internal object SipSettingsJson {
             encryption = Encryption.valueOf(s("encryption")), dtmf = Dtmf.valueOf(s("dtmf")),
             stun = s("stun"), ice = b("ice"), echoCancellation = b("echoCancellation"), ipv6 = b("ipv6")
         )
-        profile.validate(requireAccount = profile.username.isNotEmpty() || profile.domain.isNotEmpty())
+        if (allowIncomplete) profile.copy(username = profile.username.ifEmpty { "sippy" }, domain = profile.domain.ifEmpty { "pbx.invalid" }).validate()
+        else profile.validate(requireAccount = profile.username.isNotEmpty() || profile.domain.isNotEmpty())
         val items = root.getJSONArray("codecs")
         val codecs = (0 until items.length()).map { index ->
             val item = items.getJSONObject(index)
@@ -55,6 +57,7 @@ internal object SipSettingsJson {
             "Invalid codec list."
         }
         require(codecs.any { it.enabled }) { "Enable at least one codec." }
-        return SipSettingsBackup(profile, codecs)
+        val name = if (root.has("name")) SipAccountFields.name(root.get("name") as? String ?: error("Invalid account name.")) else null
+        return SipSettingsBackup(profile, codecs, name, DndSettings.decode(root.optJSONObject("dnd")))
     }
 }

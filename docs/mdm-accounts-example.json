@@ -1,0 +1,25 @@
+{
+  "managedConfigurationEnabled": true,
+  "sipAccounts": [
+    {
+      "id": "office",
+      "name": "Office",
+      "accountLocalCredentials": true,
+      "accountDomain": "pbx.example.com",
+      "accountServer": "registrar.example.com:5061",
+      "accountTransport": "TLS",
+      "accountRegister": true
+    },
+    {
+      "id": "support",
+      "name": "Support",
+      "accountLocalCredentials": true,
+      "accountDomain": "support.example.com",
+      "accountServer": "registrar.support.example.com:5061",
+      "accountTransport": "TLS",
+      "accountRegister": true
+    }
+  ],
+  "backgroundCalling": true,
+  "startOnBoot": true
+}
