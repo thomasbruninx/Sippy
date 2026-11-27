@@ -2,7 +2,7 @@ package org.sippy
 
 import org.json.JSONObject
 
-internal data class SipAccountConfig(val id: String, val name: String, val profile: SipProfile, val managed: Boolean = false, val dnd: DndSettings = DndSettings(), val managedKeys: Set<String> = emptySet())
+internal data class SipAccountConfig(val id: String, val name: String, val profile: SipProfile, val managed: Boolean = false, val dnd: DndSettings = DndSettings(), val managedKeys: Set<String> = emptySet(), val options: AccountOptions = AccountOptions())
 
 /** Account identity, registration, transport and NAT are independent; device media settings are shared. */
 internal object SipAccountFields {

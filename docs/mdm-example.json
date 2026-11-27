@@ -8,9 +8,13 @@
       "accountDomain": "pbx.example.com",
       "accountServer": "registrar.example.com:5061",
       "accountTransport": "TLS",
-      "accountRegister": true
+      "accountRegister": true,
+      "accountCodecOrder": "opus,g722,pcma,pcmu",
+      "accountTransferMode": "BOTH",
+      "accountRingtoneUri": ""
     }
   ],
   "backgroundCalling": true,
-  "startOnBoot": true
+  "startOnBoot": true,
+  "csvContent": "name,number\nReception,100\nSupport,101\n"
 }

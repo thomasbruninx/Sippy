@@ -75,7 +75,7 @@ internal class Preferences(private val context: Context, private val useManaged:
     val data = if (useManaged) ManagedPreferences(local) else local
     fun isManaged(key: String): Boolean {
         if (!useManaged) return false
-        val accountField = key in SipAccountFields.keys || key in DndSettings.keys
+        val accountField = key in SipAccountFields.keys || key in DndSettings.keys || key in AccountOptions.keys
         return if (accountField) key in selectedAccount().managedKeys else ManagedConfiguration.isManaged(key)
     }
     private fun accountOverrides() = JSONObject(local.getString("sipAccountOverrides", "{}").orEmpty())
@@ -98,17 +98,39 @@ internal class Preferences(private val context: Context, private val useManaged:
     }
 
     private fun localAccounts(): JSONArray {
-        local.getString("sipAccountsLocal", null)?.let { return JSONArray(it) }
+        local.getString("sipAccountsLocal", null)?.let { text ->
+            val accounts = JSONArray(text)
+            var changed = false
+            for (i in 0 until accounts.length()) {
+                val fields = accounts.getJSONObject(i).getJSONObject("fields")
+                if (!fields.has("options")) { fields.put("options", legacyOptions().json()); changed = true }
+            }
+            if (changed) check(local.edit().putString("sipAccountsLocal", accounts.toString()).commit())
+            return accounts
+        }
         // Migrate the existing account without decrypting or copying its password as plaintext.
         val legacy = if (useManaged) Preferences(context, useManaged = false).flatProfile() else flatProfile()
         val fields = SipAccountFields.encode(legacy).apply {
             remove("password")
             local.getString("passwordCipher", null)?.let { put("passwordCipher", it) }
         }
+        fields.put("options", legacyOptions().json())
         val initial = JSONArray().put(JSONObject().put("id", "default").put("name", "Default account").put("fields", fields))
         check(local.edit().putString("sipAccountsLocal", initial.toString()).commit()) { "Could not save accounts." }
         return initial
     }
+
+    private fun legacyOptions() = AccountOptions(
+        runCatching {
+            val saved = JSONArray(local.getString("codecs", "[]"))
+            val ordered = (0 until saved.length()).map { index ->
+                val item = saved.getJSONObject(index)
+                Preferences.defaultCodecs.first { it.id == item.getString("id") }.copy(enabled = item.getBoolean("enabled"))
+            }
+            ordered + Preferences.defaultCodecs.filter { codec -> ordered.none { it.id == codec.id } }
+        }.getOrDefault(Preferences.defaultCodecs),
+        local.getString("ringtoneUri", null), local.getString("ringtoneName", "Default ringtone").orEmpty(),
+        runCatching { TransferMode.valueOf(local.getString("transferMode", "BOTH")!!) }.getOrDefault(TransferMode.BOTH))
 
     fun accounts(): List<SipAccountConfig> {
         val shared = flatProfile()
@@ -122,7 +144,7 @@ internal class Preferences(private val context: Context, private val useManaged:
             val item = stored.getJSONObject(index)
             val fields = JSONObject(item.getJSONObject("fields").toString())
             fields.put("password", fields.optString("passwordCipher", "").takeIf { it.isNotEmpty() }?.let(::decrypt).orEmpty())
-            SipAccountConfig(item.getString("id"), item.getString("name"), SipAccountFields.decode(fields, shared), dnd = DndSettings.decode(fields.optJSONObject("dnd")))
+            SipAccountConfig(item.getString("id"), item.getString("name"), SipAccountFields.decode(fields, shared), dnd = DndSettings.decode(fields.optJSONObject("dnd")), options = AccountOptions.decode(fields.optJSONObject("options")))
         }
         val visible = if (managed.isEmpty()) personal else personal.filter { it.profile.configured || it.id != "default" }
         val effectiveManaged = managed.map { account ->
@@ -137,7 +159,12 @@ internal class Preferences(private val context: Context, private val useManaged:
                 val field = key.removePrefix("dnd").replaceFirstChar { it.lowercase() }
                 overrides.optJSONObject("dnd")?.let { if (it.has(field)) dnd.put(field, it.get(field)) }
             }
-            account.copy(profile = SipAccountFields.decode(fields, shared), dnd = DndSettings.decode(dnd))
+            val options = account.options.json()
+            val optionOverrides = overrides.optJSONObject("options")
+            AccountOptions.keys.filter { it !in account.managedKeys }.forEach { key ->
+                if (optionOverrides?.has(key) == true) options.put(key, optionOverrides.get(key))
+            }
+            account.copy(profile = SipAccountFields.decode(fields, shared), dnd = DndSettings.decode(dnd), options = AccountOptions.decode(options))
         }
         accountCache = effectiveManaged + visible.filter { personal ->
             val identity = SipAccountFields.identity(personal.profile)
@@ -167,7 +194,7 @@ internal class Preferences(private val context: Context, private val useManaged:
         }
     }
 
-    fun addAccount(name: String, profile: SipProfile = SipProfile(), dnd: DndSettings = DndSettings()): String {
+    fun addAccount(name: String, profile: SipProfile = SipProfile(), dnd: DndSettings = DndSettings(), options: AccountOptions = AccountOptions()): String {
         val checked = uniqueName(name)
         validateAccountIdentity(profile)
         dnd.validate()
@@ -178,7 +205,7 @@ internal class Preferences(private val context: Context, private val useManaged:
             remove("password")
             if (profile.password.isNotEmpty()) put("passwordCipher", encrypt(profile.password))
         }
-        fields.put("dnd", dnd.json())
+        fields.put("dnd", dnd.json()).put("options", options.json())
         stored.put(JSONObject().put("id", id).put("name", checked).put("fields", fields))
         check(local.edit().putString("sipAccountsLocal", stored.toString()).putString("selectedAccountId", id).putString("lastPersonalAccountId", id).commit()) { "Could not save account." }
         return id
@@ -245,8 +272,24 @@ internal class Preferences(private val context: Context, private val useManaged:
         set(value) { data.edit().putString("appearance", value.name).apply() }
 
     var transferMode: TransferMode
-        get() = TransferMode.entries.firstOrNull { it.name == data.getString("transferMode", null) } ?: TransferMode.BOTH
-        set(value) { data.edit().putString("transferMode", value.name).apply() }
+        get() = selectedAccount().options.transferMode
+        set(value) { saveOptions(selectedAccount().options.copy(transferMode = value)) }
+
+    fun saveOptions(options: AccountOptions, id: String = selectedAccount().id) {
+        val selected = accounts().first { it.id == id }
+        val stored = if (selected.managed) accountOverrides() else null
+        val personal = if (!selected.managed) localAccounts() else null
+        val fields = if (stored != null) stored.optJSONObject(id) ?: JSONObject() else
+            (0 until personal!!.length()).map(personal::getJSONObject).first { it.getString("id") == id }.getJSONObject("fields")
+        val destination = fields.optJSONObject("options") ?: JSONObject()
+        val incoming = options.json()
+        AccountOptions.keys.filter { it !in selected.managedKeys }.forEach { destination.put(it, incoming.get(it)) }
+        fields.put("options", destination)
+        val edit = local.edit()
+        if (stored != null) { stored.put(id, fields); edit.putString("sipAccountOverrides", stored.toString()) }
+        else edit.putString("sipAccountsLocal", personal.toString())
+        check(edit.commit()) { "Could not save account options." }
+    }
 
     var dialpadTones: Boolean
         get() = data.getBoolean("dialpadTones", true)
@@ -345,20 +388,30 @@ internal class Preferences(private val context: Context, private val useManaged:
             .putString("ldapClientCertificateAlias", config.clientCertificateAlias).apply()
     }
 
-    fun codecs(): List<Codec> {
-        val byId = defaultCodecs.associateBy { it.id }
-        val saved = JSONArray(data.getString("codecs", "[]"))
-        val ordered = (0 until saved.length()).mapNotNull {
-            val item = saved.getJSONObject(it)
-            byId[item.getString("id")]?.copy(enabled = item.getBoolean("enabled"))
-        }
-        return ordered + defaultCodecs.filter { codec -> ordered.none { it.id == codec.id } }
+    internal fun saveLdapPassword(password: String) {
+        if (isManaged("ldapPassword")) return
+        data.edit().putString("ldapPasswordCipher", password.takeIf { it.isNotEmpty() }?.let(::encrypt)).apply()
     }
 
-    fun saveCodecs(codecs: List<Codec>) {
-        data.edit().putString("codecs", JSONArray(codecs.map {
-            JSONObject().put("id", it.id).put("enabled", it.enabled)
-        }).toString()).apply()
+    fun codecs(): List<Codec> = selectedAccount().options.codecs
+    fun saveCodecs(codecs: List<Codec>) = saveOptions(selectedAccount().options.copy(codecs = codecs))
+
+    internal fun localSnapshot(): Map<String, *> = local.all
+    internal fun resetLocalSettings() {
+        // Policies live in RestrictionsManager, not this local store. Keep them enforced
+        // while removing all personal settings, credentials and managed-account overrides.
+        val revision = local.getInt("csvRevision", 0) + 1
+        check(local.edit().clear().putInt("csvRevision", revision).commit()) { "Could not reset local settings." }
+        accountCacheKey = null
+    }
+    internal fun restoreSnapshot(snapshot: Map<String, *>) {
+        val edit = local.edit().clear()
+        snapshot.forEach { (key, value) -> when (value) {
+            is String -> edit.putString(key, value); is Boolean -> edit.putBoolean(key, value)
+            is Int -> edit.putInt(key, value); is Long -> edit.putLong(key, value); is Float -> edit.putFloat(key, value)
+            is Set<*> -> @Suppress("UNCHECKED_CAST") edit.putStringSet(key, value as Set<String>)
+        } }
+        check(edit.commit()) { "Could not restore settings." }
     }
 
     private fun secretKey(): SecretKey {

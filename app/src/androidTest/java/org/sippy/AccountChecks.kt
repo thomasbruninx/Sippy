@@ -169,16 +169,8 @@ internal class AccountChecks(private val instrumentation: Instrumentation) {
                 val notices = context.getSystemService(NotificationManager::class.java).activeNotifications
                 check(notices.any { it.notification.extras.getString("android.title").orEmpty().contains("DND: Home") })
                 fun exported(accountId: String): org.json.JSONObject {
-                    val file = java.io.File(context.cacheDir, "account-export-${UUID.randomUUID()}.json")
-                    try {
-                        main {
-                            app.settingsFiles.includePassword = true
-                            app.settingsFiles.exportAccountId = accountId
-                            app.settingsFiles.result(42, android.app.Activity.RESULT_OK, Intent().setData(android.net.Uri.fromFile(file)))
-                        }
-                        await("Named export did not finish") { file.exists() && file.length() > 0 }
-                        return org.json.JSONObject(file.readText())
-                    } finally { file.delete() }
+                    val records = main { SettingsBackup(context, prefs).export(BackupSection.entries.toSet()).root.getJSONArray("accounts") }
+                    return (0 until records.length()).map(records::getJSONObject).first { it.getString("id") == accountId }
                 }
                 val homeExport = exported(secondId)
                 check(homeExport.getString("name") == "Home" && homeExport.getJSONObject("account").getString("password") == "ACCOUNT_TWO_SECRET")
@@ -190,6 +182,10 @@ internal class AccountChecks(private val instrumentation: Instrumentation) {
                     fun dialogNodes() = instrumentation.uiAutomation.rootInActiveWindow
                     fun importButton() = dialogNodes()?.findAccessibilityNodeInfosByText("Import")?.firstOrNull { it.text?.toString()?.equals("Import", true) == true }
                     await("Import account-name dialog did not open") { importButton() != null }
+                    val emptyName = dialogNodes()!!.findAccessibilityNodeInfosByText("Account name").first { it.className == "android.widget.EditText" }
+                    emptyName.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
+                        putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
+                    })
                     importButton()!!.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
                     check(prefs.accounts().size == 2) { "Import accepted an empty account name" }
                     val field = dialogNodes()!!.findAccessibilityNodeInfosByText("Account name").first { it.className == "android.widget.EditText" }

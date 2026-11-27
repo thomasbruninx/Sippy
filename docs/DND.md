@@ -6,7 +6,7 @@ DND keeps accounts registered and automatically rejects new incoming calls to th
 
 ## DND behaviour settings
 
-Open **Settings → Network**, select an account, and find **DND behaviour**. Use **Save DND behaviour** to apply changes. These settings are separate from the shared device audio and codec settings.
+Open **Settings → Network**, select an account, and find **DND behaviour**. Use **Save DND behaviour** to apply changes. These settings are separate from device audio settings. Codec order, ringtone and transfer mode are also account-specific.
 
 | Setting | Default | Behaviour |
 | --- | --- | --- |
@@ -68,6 +68,6 @@ An administrator can provide these per-account settings in the `sipAccounts` arr
 | `accountDndFeatureSchema` | string | `BROADSOFT` or `THREE_CX`; default `BROADSOFT` |
 | `accountDndPriorityException` | boolean | `false` |
 
-See the [MDM guide](MDM.md) and [two-account example](mdm-accounts-example.json). Per-account DND behaviour is included in named SIP account exports and restored on import. The live on/off toggle is a device preference and is not exported. Older backups without DND settings import with the defaults above.
+See the [MDM guide](MDM.md) and [two-account example](mdm-accounts-example.json). Per-account DND behaviour and on/off state can be selected in **Settings backup** during export and import. Managed fields and managed on/off state are skipped during restore. Older backups without DND settings import with the defaults above.
 
 The optional refusal header follows [RFC 3326](https://www.rfc-editor.org/rfc/rfc3326.html); local call rejection remains independent of server sync.

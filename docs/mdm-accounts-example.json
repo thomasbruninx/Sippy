@@ -8,7 +8,10 @@
       "accountDomain": "pbx.example.com",
       "accountServer": "registrar.example.com:5061",
       "accountTransport": "TLS",
-      "accountRegister": true
+      "accountRegister": true,
+      "accountCodecOrder": "opus,g722,pcma,pcmu",
+      "accountTransferMode": "BOTH",
+      "accountRingtoneUri": ""
     },
     {
       "id": "support",

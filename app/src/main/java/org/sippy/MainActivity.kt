@@ -117,6 +117,7 @@ class MainActivity : ComponentActivity() {
             if (!prefs.ldapEnabled) ldapContacts = false
             applyAppearance()
             buildLayout()
+            refreshDirectoryViews()
         }
     }
     private val changes = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -159,6 +160,10 @@ class MainActivity : ComponentActivity() {
         number = savedInstanceState?.getString("number").orEmpty()
         settingsFiles.includePassword = savedInstanceState?.getBoolean("exportPassword") == true
         settingsFiles.exportAccountId = savedInstanceState?.getString("exportAccountId")
+        settingsFiles.ringtoneAccountId = savedInstanceState?.getString("ringtoneAccountId")
+        savedInstanceState?.getStringArrayList("backupSections")?.let { values ->
+            settingsFiles.backupSections = values.mapNotNull { runCatching { BackupSection.valueOf(it) }.getOrNull() }.toSet()
+        }
         permissionsInFlight = savedInstanceState?.getBoolean("permissionsInFlight") == true
         val notificationIntentAnswer = takeNotificationAnswer(intent)
         pendingNotificationAnswer = savedInstanceState?.getLong("notificationAnswer")?.takeIf { it != 0L }
@@ -285,6 +290,8 @@ class MainActivity : ComponentActivity() {
         outState.putString("number", number)
         outState.putBoolean("exportPassword", settingsFiles.includePassword)
         outState.putString("exportAccountId", settingsFiles.exportAccountId)
+        outState.putString("ringtoneAccountId", settingsFiles.ringtoneAccountId)
+        outState.putStringArrayList("backupSections", ArrayList(settingsFiles.backupSections.map { it.name }))
         outState.putBoolean("permissionsInFlight", permissionsInFlight)
         outState.putBoolean("call", showCall)
         outState.putLong("notificationAnswer", pendingNotificationAnswer ?: 0L)
@@ -492,6 +499,46 @@ class MainActivity : ComponentActivity() {
         }
         body.addView(view, FrameLayout.LayoutParams(-1, -1))
         if (scrollPosition != null) view.post { view.scrollTo(0, scrollPosition) }
+    }
+
+    internal fun refreshAppearance() { applyAppearance(); buildLayout() }
+
+    internal fun confirmFactoryReset() {
+        if (sipState.lines.isNotEmpty()) { message("End all calls before resetting Sippy."); return }
+        if (settingsFiles.busy) { message("Wait for the current file operation to finish before resetting Sippy."); return }
+        android.app.AlertDialog.Builder(this).setTitle("Factory reset Sippy?")
+            .setMessage("Permanently delete personal settings and SIP accounts, locally entered credentials for managed accounts, custom ringtones, event logs, call history, and contacts created or imported in Sippy. MDM-managed settings and contacts remain enforced. Your phone's contacts and Android permissions are unchanged. This cannot be undone.")
+            .setNegativeButton("Cancel", null).setPositiveButton("Factory reset") { _, _ ->
+                val connected = service
+                if (sipState.lines.isNotEmpty() || connected == null || settingsFiles.busy) {
+                    message("Sippy cannot reset right now. End all calls and wait for file operations to finish, then retry.")
+                    return@setPositiveButton
+                }
+                settingsFiles.ringtonePreview.stop()
+                ldapTask?.close(); ldapTask = null
+                val previousOrientation = requestedOrientation
+                requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LOCKED
+                val progress = android.app.AlertDialog.Builder(this).setTitle("Resetting Sippy")
+                    .setMessage("Clearing local settings and app data…").setCancelable(false).show()
+                FactoryReset(this).run(connected) { outcome ->
+                    if (!isDestroyed) {
+                        progress.dismiss()
+                        requestedOrientation = previousOrientation
+                        number = ""; ldapQuery = ""; ldapContacts = false; showCall = false; showEvents = false
+                        query = ""; source = null; sort = Sort.NAME_ASC; tones = ""; showDtmf = false
+                        lastSelected = null; shownIncoming = null; pendingNotificationAnswer = null
+                        page = Page.SETTINGS; settingsTab = 5
+                        settingsFiles.backupSections = BackupSection.entries.toSet() - BackupSection.PASSWORDS
+                        settingsFiles.includePassword = false; settingsFiles.ringtoneAccountId = null; settingsFiles.exportAccountId = null
+                        refreshAppearance()
+                        updateBackgroundCalling()
+                        android.app.AlertDialog.Builder(this).setTitle(if (outcome.isSuccess) "Factory reset complete" else "Factory reset incomplete")
+                            .setMessage(if (outcome.isSuccess) "Local settings and app data were cleared. MDM-managed settings remain active. Android permissions are unchanged. New diagnostic events may appear as Sippy reconnects."
+                                else "Some local data could not be cleared or Sippy could not restart. The reset may have been partially applied. Reopen Sippy and retry the reset. MDM-managed settings remain active.")
+                            .setPositiveButton("Close", null).show()
+                    }
+                }
+            }.show()
     }
 
     internal fun accountSelector(): View {
@@ -702,7 +749,7 @@ class MainActivity : ComponentActivity() {
     private fun transferMenu(id: Long) {
         fun direct() = chooseDestination("Direct transfer", "Transfer") { service?.blind(id, it) }
         fun attended() = chooseDestination("Ask first", "Call") { dial(it, id) }
-        when (prefs.transferMode) {
+        when (service?.transferMode(id) ?: prefs.transferMode) {
             TransferMode.DIRECT_ONLY -> direct()
             TransferMode.ATTENDED_ONLY -> attended()
             TransferMode.BOTH -> AlertDialog.Builder(this).setTitle("Transfer call")
@@ -935,9 +982,10 @@ class MainActivity : ComponentActivity() {
         fun filters() {
             controls.removeAllViews()
             val groups = listOf<Source?>(null) + Source.entries
-            val sourceAction = ui.action(filter?.label ?: "All phonebooks", "down", Palette.surface, outlined = true) {}
+            fun label(value: Source?) = if (value == Source.CSV && prefs.isManaged("csvContent")) "Imported · Managed" else value?.label ?: "All phonebooks"
+            val sourceAction = ui.action(label(filter), "down", Palette.surface, outlined = true) {}
             sourceAction.setOnClickListener {
-                popup(sourceAction, groups.map { it?.label ?: "All phonebooks" }) {
+                popup(sourceAction, groups.map(::label)) {
                     filter = groups[it]; updateSource(filter); filters(); refresh()
                 }
             }

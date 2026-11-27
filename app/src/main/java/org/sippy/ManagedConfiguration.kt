@@ -40,7 +40,7 @@ internal object ManagedConfiguration {
         apply(context, bundle)
     }
     /** Also used by device-side tests with synthetic restrictions; no intent can inject this bundle. */
-    fun apply(context: Context, bundle: Bundle) {
+    @Synchronized fun apply(context: Context, bundle: Bundle) {
         val before = Triple(values, error, present)
         val oldKeys = suppliedKeys
         try {
@@ -80,7 +80,7 @@ internal object ManagedConfiguration {
         for ((key, type) in types) if (bundle.containsKey(key)) {
             val value = bundle.get(key)
             if (!type.isInstance(value)) throw Invalid(key)
-            if (value is String && value.length > 16384) throw Invalid(key)
+            if (value is String && (if (key == "csvContent") value.toByteArray(Charsets.UTF_8).size > 65536 else value.length > 16384)) throw Invalid(key)
             result[key] = value
         }
         if (bundle.containsKey("sipAccounts")) {
@@ -118,10 +118,23 @@ internal object ManagedConfiguration {
                     }
                 }
                 val dnd = runCatching { DndSettings.decode(dndJson) }.getOrElse { throw Invalid("sipAccounts.DND") }
+                val optionsJson = JSONObject()
+                if (item.containsKey("accountCodecOrder")) {
+                    val order = item.get("accountCodecOrder") as? String ?: throw Invalid("sipAccounts.accountCodecOrder")
+                    if (order.isNotBlank()) optionsJson.put("codecs", AccountOptions.codecJson(runCatching { AccountOptions.codecOrder(order) }.getOrElse { throw Invalid("sipAccounts.accountCodecOrder") }))
+                }
+                if (item.containsKey("accountRingtoneUri")) {
+                    val uri = item.get("accountRingtoneUri") as? String ?: throw Invalid("sipAccounts.accountRingtoneUri")
+                    optionsJson.put("ringtoneUri", uri.ifEmpty { null } ?: JSONObject.NULL)
+                    optionsJson.put("ringtoneName", if (uri.isEmpty()) "Default ringtone" else "Managed ringtone")
+                }
+                if (item.containsKey("accountTransferMode")) optionsJson.put("transferMode", item.get("accountTransferMode"))
+                val options = runCatching { AccountOptions.decode(optionsJson) }.getOrElse { throw Invalid("sipAccounts.options") }
+                val optionKeys = optionsJson.keys().asSequence().toSet()
                 val managedKeys = (SipAccountFields.keys + DndSettings.keys).filter { key ->
                     item.containsKey("account" + key.replaceFirstChar { it.uppercase() }) && !(localCredentials && key in credentialKeys)
-                }.toSet()
-                SipAccountConfig("managed:$id", name, profile, managed = true, dnd = dnd, managedKeys = managedKeys)
+                }.toSet() + optionKeys
+                SipAccountConfig("managed:$id", name, profile, managed = true, dnd = dnd, managedKeys = managedKeys, options = options)
             }
             if (accounts.map { it.id }.distinct().size != accounts.size ||
                 accounts.map { it.name.lowercase(java.util.Locale.ROOT) }.distinct().size != accounts.size) throw Invalid("sipAccounts")
@@ -135,25 +148,15 @@ internal object ManagedConfiguration {
         }
         enum("encryption", Encryption.entries.map { it.name })
         enum("dtmf", Dtmf.entries.map { it.name }); enum("appearance", Appearance.entries.map { it.name })
-        enum("transferMode", TransferMode.entries.map { it.name })
+
         fun range(key: String, bounds: IntRange) { if (key in result && result[key] !in bounds) throw Invalid(key) }
         range("localPort", 0..65535); range("rtpPort", 0..65534)
         range("csvInterval", 15..10080); range("eventRetentionDays", 1..30); range("ldapPort", 1..65535)
-        (result.remove("codecOrder") as? String)?.takeIf { it.isNotBlank() }?.let { order ->
-            val ids = order.split(',').map { it.trim().lowercase(java.util.Locale.ROOT) }
-            if (ids.distinct().size != ids.size || ids.any { id -> Preferences.defaultCodecs.none { it.id == id } }) throw Invalid("codecOrder")
-            val codecs = ids.map { id -> Preferences.defaultCodecs.first { it.id == id }.copy(enabled = true) } +
-                Preferences.defaultCodecs.filter { it.id !in ids }.map { it.copy(enabled = false) }
-            result["codecs"] = JSONArray(codecs.map { JSONObject().put("id", it.id).put("enabled", it.enabled) }).toString()
+        (result["csvContent"] as? String)?.takeIf { it.isNotBlank() }?.let {
+            if (runCatching { parseCsv(it.byteInputStream(), Source.CSV) }.isFailure) throw Invalid("csvContent")
         }
         (result["csvUrl"] as? String)?.takeIf { it.isNotEmpty() }?.let {
             if (runCatching { checkedUrl(it) }.isFailure) throw Invalid("csvUrl")
-        }
-        if ("ringtoneUri" in result) {
-            val text = result["ringtoneUri"] as String
-            if (text.isEmpty()) result["ringtoneUri"] = null
-            else if (runCatching { URI(text).scheme in setOf("content", "android.resource", "file") }.getOrDefault(false).not()) throw Invalid("ringtoneUri")
-            result["ringtoneName"] = if (text.isEmpty()) "Default ringtone" else "Managed ringtone"
         }
         val local = Preferences(context, useManaged = false)
         fun s(key: String, fallback: String) = result[key] as? String ?: fallback
@@ -172,6 +175,9 @@ internal object ManagedConfiguration {
         val previous = local.getString("mdmCsvUrl", null) ?: local.getString("csvUrl", "").orEmpty()
         val current = managedUrl ?: local.getString("csvUrl", "").orEmpty()
         local.edit().apply {
+            // A valid inline policy replaces the imported phonebook permanently.
+            // Never let its previous personal contents return when management is removed.
+            if (values.containsKey("csvContent")) remove("entries_CSV")
             if (managedUrl == null) remove("mdmCsvUrl") else putString("mdmCsvUrl", managedUrl)
             if (previous != current) {
                 remove("entries_SYNC"); remove("lastSync"); remove("syncError")
@@ -207,16 +213,14 @@ internal object ManagedConfiguration {
         "dtmf" to String::class.javaObjectType,
         "echo" to Boolean::class.javaObjectType,
         "ipv6" to Boolean::class.javaObjectType,
-        "codecOrder" to String::class.javaObjectType,
         "appearance" to String::class.javaObjectType,
-        "transferMode" to String::class.javaObjectType,
         "dialpadTones" to Boolean::class.javaObjectType,
         "vibrateOnIncoming" to Boolean::class.javaObjectType,
-        "ringtoneUri" to String::class.javaObjectType,
         "backgroundCalling" to Boolean::class.javaObjectType,
         "startOnBoot" to Boolean::class.javaObjectType,
         "eventRetentionDays" to Int::class.javaObjectType,
         "csvUrl" to String::class.javaObjectType,
+        "csvContent" to String::class.javaObjectType,
         "csvInterval" to Int::class.javaObjectType,
         "ldapEnabled" to Boolean::class.javaObjectType,
         "ldapHost" to String::class.javaObjectType,

@@ -12,6 +12,8 @@ import android.database.sqlite.SQLiteOpenHelper
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.io.OutputStream
+import java.time.Instant
 
 internal enum class EventKind(val label: String) {
     INFO("Info"), WARNING("Warning"), ERROR("Error"), SIP("SIP")
@@ -97,6 +99,32 @@ internal class ActivityStore(private val context: Context, databaseName: String 
         } finally { database.endTransaction() }
     }
 
+    fun factoryReset(result: (Result<Unit>) -> Unit) = read(result) {
+        val database = db.writableDatabase
+        database.beginTransaction()
+        try {
+            listOf("events", "history", "cleared_history").forEach { database.delete(it, null, null) }
+            database.setTransactionSuccessful()
+        } finally { database.endTransaction() }
+    }
+
+    /** Export the complete retained log, independent of the event screen's filter/limit. */
+    fun exportEvents(open: () -> OutputStream, result: (Result<Int>) -> Unit) = read(result) {
+        val database = db.writableDatabase
+        trim(database)
+        var count = 0
+        open().bufferedWriter(Charsets.UTF_8).use { output ->
+            output.write("timestamp_utc,level,message\r\n")
+            database.query("events", arrayOf("time", "kind", "message"), null, null, null, null, "time ASC, id ASC").use { cursor ->
+                while (cursor.moveToNext()) {
+                    output.write(eventCsvRow(EventRecord(cursor.getLong(0), EventKind.valueOf(cursor.getString(1)), cursor.getString(2))))
+                    count++
+                }
+            }
+        }
+        count
+    }
+
     fun events(filter: EventKind?, limit: Int, result: (Result<List<EventRecord>>) -> Unit) = read(result) {
         val writable = db.writableDatabase
         trim(writable)
@@ -149,6 +177,15 @@ internal class ActivityStore(private val context: Context, databaseName: String 
         @Synchronized fun get(context: Context): ActivityStore =
             instance ?: ActivityStore(context.applicationContext).also { instance = it }
     }
+}
+
+internal fun eventCsvRow(record: EventRecord): String {
+    fun cell(value: String): String {
+        // Quoting alone does not stop spreadsheet formulas in caller-controlled text.
+        val safe = if (value.trimStart().firstOrNull() in listOf('=', '+', '-', '@')) "'$value" else value
+        return "\"${safe.replace("\"", "\"\"")}\""
+    }
+    return listOf(Instant.ofEpochMilli(record.time).toString(), record.kind.name, record.message).joinToString(",", transform = ::cell) + "\r\n"
 }
 
 class EventPruneJob : JobService() {

@@ -10,12 +10,15 @@ Features include:
 - Up to four simultaneous call lines across all accounts
 - Support for Opus, G.722, and G.711 (PCMA and PCMU) codecs
 - Configurable SIP, audio, and application settings, with password visibility controls
-- Contacts from the phone's address book, imported CSV files, synchronized remote CSV files, and LDAP directories
+- Per-account codecs, ringtones and transfer modes
+- Selective settings backup and restore with MDM enforcement
+- Event-log CSV export and a confirmed factory reset that preserves managed settings
+- Contacts from the phone's address book, imported CSV files, synchronized remote CSV files, MDM-provided CSV phonebooks, and LDAP directories
 - Managed configuration through mobile device management (MDM), including named account lists
 - Per-account Do Not Disturb, with optional presence/feature synchronization and an emergency-priority exception
 - Support for 32-bit and 64-bit ARM devices running Android 9 or later
 
-See the [usage guide](docs/USAGE.md) for setup instructions and a feature overview, or the [MDM guide](docs/MDM.md) for managed deployment and configuration. The [DND guide](docs/DND.md) explains local call rejection and server synchronization.
+See the [usage guide](docs/USAGE.md) for setup instructions and a feature overview, or the [MDM guide](docs/MDM.md) for managed deployment and configuration. The [DND guide](docs/DND.md) explains local call rejection and server synchronization. The [backup and upgrade guide](docs/BACKUPS.md) covers selective settings backup, MDM-aware restore, and migration from v1.1.8.
 
 Download the latest APK from the [GitHub releases page](https://github.com/thomasbruninx/Sippy/releases).
 

@@ -47,7 +47,8 @@ internal class IncomingCallChecks(private val instrumentation: Instrumentation) 
         check(activity.getSystemService(AudioManager::class.java).ringerMode == AudioManager.RINGER_MODE_NORMAL)
         val prefs = activity.prefs
         val originalProfile = prefs.profile()
-        val originalUri = prefs.data.getString("ringtoneUri", null)
+        val originalOptions = prefs.selectedAccount().options
+        val originalUri = originalOptions.ringtoneUri
         val originalVibrate = prefs.data.getBoolean("vibrateOnIncoming", false)
         val originalBackground = prefs.backgroundCalling
         val coreField = SipService::class.java.getDeclaredField("core").apply { isAccessible = true }
@@ -66,7 +67,7 @@ internal class IncomingCallChecks(private val instrumentation: Instrumentation) 
             main {
                 prefs.save(SipProfile(username = "ring-check", domain = "127.0.0.1", register = false))
                 prefs.backgroundCalling = true
-                prefs.data.edit().remove("ringtoneUri").apply()
+                prefs.saveOptions(prefs.selectedAccount().options.copy(ringtoneUri = null, ringtoneName = "Default ringtone"))
                 service.configure()
             }
             val port = main { (coreField.get(service) as Core).transportsUsed.udpPort }
@@ -211,7 +212,8 @@ internal class IncomingCallChecks(private val instrumentation: Instrumentation) 
                 service.state.lines.forEach { service.end(it.id) }
                 prefs.save(originalProfile)
                 prefs.backgroundCalling = originalBackground
-                prefs.data.edit().putString("ringtoneUri", originalUri).putBoolean("vibrateOnIncoming", originalVibrate).apply()
+                prefs.saveOptions(originalOptions)
+                prefs.data.edit().putBoolean("vibrateOnIncoming", originalVibrate).apply()
                 service.configure()
                 activity.finish()
             }

@@ -43,7 +43,9 @@ internal class ManagedConfigurationChecks(private val instrumentation: Instrumen
         await("Cold startup did not load OS restrictions") { main { ManagedConfiguration.present && Preferences(context).profile().username == "managed200" } }
         val schema = context.getSystemService(RestrictionsManager::class.java).getManifestRestrictions(context.packageName)
         check(schema.any { it.key == "managedConfigurationEnabled" } && schema.any { it.key == "sipAccounts" } && schema.none { it.key in SipAccountFields.keys }) { "MDM schema was not discoverable from the APK" }
-        check(schema.first { it.key == "transferMode" }.choiceValues.toList() == listOf("DIRECT_ONLY", "ATTENDED_ONLY", "BOTH"))
+        check(schema.first { it.key == "sipAccounts" }.restrictions.first().restrictions.first { it.key == "accountTransferMode" }.choiceValues.toList() == listOf("DIRECT_ONLY", "ATTENDED_ONLY", "BOTH"))
+        check(schema.any { it.key == "csvContent" })
+        check(Directory(context).stored(Source.CSV).map { it.number } == listOf("401", "402")) { "OS-managed CSV was not applied at startup" }
         val raw = Preferences(context, useManaged = false)
         val original = raw.data.all
         val activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
@@ -78,7 +80,9 @@ internal class ManagedConfigurationChecks(private val instrumentation: Instrumen
                 }
                 await("Managed settings export did not complete") { exported.exists() && exported.length() > 0 }
                 val json = org.json.JSONObject(exported.readText())
-                check(!json.getJSONObject("account").has("password") && !exported.readText().contains("MDM_FIXTURE_SECRET")) { "Managed password escaped into a SIP export" }
+                val records = json.getJSONArray("accounts")
+                val managedRecord = (0 until records.length()).map(records::getJSONObject).first { it.getString("id") == prefs.selectedAccount().id }
+                check(!managedRecord.getJSONObject("account").has("password") && !exported.readText().contains("MDM_FIXTURE_SECRET")) { "Managed password escaped into a SIP export" }
             } finally { exported.delete() }
             val coreField = SipService::class.java.getDeclaredField("core").apply { isAccessible = true }
             val core = main { coreField.get(service) as Core }

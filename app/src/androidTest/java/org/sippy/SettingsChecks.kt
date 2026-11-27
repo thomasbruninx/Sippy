@@ -19,13 +19,16 @@ class SettingsChecks : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
-            if (checks in setOf("ldap", "calls", "transfer", "mdm", "accounts", "dnd")) {
+            if (checks in setOf("ldap", "calls", "transfer", "mdm", "accounts", "dnd", "backup", "account_codecs", "troubleshooting")) {
                 when (checks) {
                     "ldap" -> LdapChecks(this).run()
                     "transfer" -> TransferModeChecks(this).run()
                     "mdm" -> ManagedConfigurationChecks(this).run()
                     "accounts" -> AccountChecks(this).run()
                     "dnd" -> DndChecks(this).run()
+                    "backup" -> SettingsBackupChecks(this).run()
+                    "account_codecs" -> AccountCodecChecks(this).run()
+                    "troubleshooting" -> TroubleshootingChecks(this).run()
                     else -> IncomingCallChecks(this).run()
                 }
                 result.putString("stream", "Passed: $checks checks.\n")
@@ -81,9 +84,10 @@ class SettingsChecks : Instrumentation() {
 
     private fun checkAudioImport() {
         val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
-        val prefs = activity.prefs.data
-        val oldUri = prefs.getString("ringtoneUri", null)
-        val oldName = prefs.getString("ringtoneName", null)
+        val prefs = activity.prefs
+        val oldOptions = prefs.selectedAccount().options
+        val oldUri = oldOptions.ringtoneUri
+        val oldName = oldOptions.ringtoneName
         val oldFile = oldUri?.takeIf { it.startsWith("file:") }?.let { File(Uri.parse(it).path!!) }
         val oldAudio = oldFile?.takeIf { it.exists() }?.readBytes()
         try {
@@ -95,25 +99,25 @@ class SettingsChecks : Instrumentation() {
                     activity.settingsFiles.result(41, Activity.RESULT_OK, Intent().setData(Uri.fromFile(fixture)))
                 }
                 val deadline = System.currentTimeMillis() + 10000
-                while (prefs.getString("ringtoneName", null) != fixture.name && System.currentTimeMillis() < deadline) Thread.sleep(50)
-                check(prefs.getString("ringtoneName", null) == fixture.name) { "$extension import failed" }
-                val copied = File(Uri.parse(prefs.getString("ringtoneUri", null)).path!!)
+                while (prefs.selectedAccount().options.ringtoneName != fixture.name && System.currentTimeMillis() < deadline) Thread.sleep(50)
+                check(prefs.selectedAccount().options.ringtoneName == fixture.name) { "$extension import failed" }
+                val copied = File(Uri.parse(prefs.selectedAccount().options.ringtoneUri).path!!)
                 check(copied.parentFile == activity.filesDir && copied.readBytes().contentEquals(fixture.readBytes()))
                 checkPreview(activity, Uri.fromFile(copied))
                 fixture.delete()
             }
-            val validUri = prefs.getString("ringtoneUri", null)
+            val validUri = prefs.selectedAccount().options.ringtoneUri
             val invalid = File(activity.cacheDir, "invalid.mp3").apply { writeText("not audio") }
             runOnMainSync { activity.settingsFiles.result(41, Activity.RESULT_OK, Intent().setData(Uri.fromFile(invalid))) }
             Thread.sleep(1000)
             waitForIdleSync()
-            check(prefs.getString("ringtoneUri", null) == validUri) { "Invalid audio replaced the ringtone" }
+            check(prefs.selectedAccount().options.ringtoneUri == validUri) { "Invalid audio replaced the ringtone" }
             invalid.delete()
         } finally {
-            val latest = prefs.getString("ringtoneUri", null)
+            val latest = prefs.selectedAccount().options.ringtoneUri
             if (latest != oldUri && latest?.startsWith("file:") == true) File(Uri.parse(latest).path!!).delete()
             if (oldFile != null && oldAudio != null) oldFile.writeBytes(oldAudio)
-            prefs.edit().putString("ringtoneUri", oldUri).putString("ringtoneName", oldName).commit()
+            prefs.saveOptions(oldOptions)
             runOnMainSync { activity.sip?.updateRingtone(); activity.finish() }
         }
     }

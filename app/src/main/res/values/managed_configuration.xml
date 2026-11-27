@@ -64,6 +64,8 @@
     <string name="mdm_eventretentiondays">Event retention (days)</string>
     <string name="mdm_eventretentiondays_description">Omit this key to keep the local setting editable. When supplied, this value is enforced by the organization.</string>
     <string name="mdm_csvurl">CSV phonebook URL</string>
+    <string name="mdm_csvcontent">Inline CSV phonebook</string>
+    <string name="mdm_csvcontent_description">Optional CSV text with name,number headers. Maximum 64 KiB UTF-8. Replaces the Imported phonebook and prevents personal imports while managed. Local and phone contacts are kept. Empty clears the Imported phonebook. Use CSV URL for larger directories.</string>
     <string name="mdm_csvurl_description">Omit this key to keep the local setting editable. When supplied, this value is enforced by the organization.</string>
     <string name="mdm_csvinterval">CSV sync interval (minutes)</string>
     <string name="mdm_csvinterval_description">Omit this key to keep the local setting editable. When supplied, this value is enforced by the organization.</string>

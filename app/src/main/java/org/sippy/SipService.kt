@@ -70,8 +70,10 @@ class SipService : Service() {
     private val activityStore by lazy { ActivityStore.get(this) }
     private var sipLogger: LoggingService? = null
     @Volatile private var logSecret: List<String> = emptyList()
+    @Volatile private var factoryResetting = false
     private val logListener = object : LoggingServiceListenerStub() {
         override fun onLogMessageWritten(service: LoggingService, domain: String, level: LogLevel, message: String) {
+            if (factoryResetting) return
             val wire = if (domain.contains("belle", ignoreCase = true)) sipLogMessage(message) else null
             when {
                 wire != null -> activityStore.event(EventKind.SIP, wire, logSecret)
@@ -106,6 +108,10 @@ class SipService : Service() {
         status = registration?.status ?: "Set up your SIP account"
         registrationDetail = registration?.detail
     }
+    internal fun transferMode(id: Long): TransferMode = find(id)?.let(::accountFor)?.let { config ->
+        prefs.accounts().firstOrNull { it.id == config.id }?.options?.transferMode ?: config.options.transferMode
+    } ?: prefs.transferMode
+
     internal fun selectAccount(id: String) {
         if (managedUpdatePending && appliedAccounts.none { it.id == id }) return report("This account will be available after all calls end.")
         prefs.selectAccount(id)
@@ -115,7 +121,7 @@ class SipService : Service() {
     internal fun dndSyncStatus(id: String): String = if (appliedAccounts.any { it.id == id && !it.profile.configured }) "Complete the SIP account first" else dndSync?.status(id) ?: "Disabled"
     internal fun updateDndBehaviour() {
         val latest = prefs.accounts().associateBy { it.id }
-        appliedAccounts = appliedAccounts.map { old -> latest[old.id]?.let { old.copy(dnd = it.dnd) } ?: old }
+        appliedAccounts = appliedAccounts.map { old -> latest[old.id]?.let { old.copy(dnd = it.dnd, options = it.options) } ?: old }
         dndSync?.update(appliedAccounts, nativeAccounts)
         val forced = ManagedConfiguration.values["doNotDisturb"] as? Boolean
         if (forced != managedDndOverride) {
@@ -179,7 +185,8 @@ class SipService : Service() {
     private var managedBlocked = false
     private val managedChanges: () -> Unit = { applyManagedConfiguration() }
     internal fun applyManagedConfiguration() {
-        val reconnect = prefs.accounts().map { it.copy(dnd = DndSettings()) } != appliedAccounts.map { it.copy(dnd = DndSettings()) } || prefs.codecs() != appliedCodecs ||
+        if (factoryResetting) return
+        val reconnect = prefs.accounts().map { it.copy(dnd = DndSettings(), options = AccountOptions()) } != appliedAccounts.map { it.copy(dnd = DndSettings(), options = AccountOptions()) } ||
             ManagedConfiguration.blocksConnection != managedBlocked || core == null && !managedBlocked
         if (reconnect) {
             if (calls().isEmpty()) configure() else managedUpdatePending = true
@@ -256,8 +263,13 @@ class SipService : Service() {
 
         override fun onCallStateChanged(core: Core, call: Call, state: Call.State, message: String) {
             val id = call.nativePointer
+            if (state == Call.State.UpdatedByRemote) call.deferUpdate()
             handler.post {
                 if (this@SipService.core?.nativePointer != core.nativePointer) return@post
+                if (state == Call.State.UpdatedByRemote) {
+                    runCatching { withAccountCodecs(accountFor(call)?.id) { call.acceptUpdate(core.createCallParams(call)) } }
+                        .onFailure { report("Could not negotiate the account's audio codecs.", EventKind.ERROR) }
+                }
                 if (dndSync?.callState(call, state) == true) { reconcile(); return@post }
                 val receiving = accountFor(call)
                 if (managedUpdatePending && receiving?.managed == true && state in setOf(Call.State.IncomingReceived, Call.State.IncomingEarlyMedia) &&
@@ -347,7 +359,31 @@ class SipService : Service() {
         super.onDestroy()
     }
 
+    internal fun prepareFactoryReset() {
+        check(calls().isEmpty()) { "End all calls before resetting Sippy." }
+        factoryResetting = true
+        try {
+            incomingRingtone.stop()
+            dndSync?.close(); dndSync = null
+            core?.let { engine ->
+                engine.removeListener(listener)
+                engine.clearCallLogs()
+                engine.clearAccounts()
+                engine.clearAllAuthInfo()
+                engine.stop()
+            }
+            core = null
+            handler.removeCallbacksAndMessages(null)
+            nativeAccounts.clear(); registrations.clear()
+            sipLogger?.removeListener(logListener); sipLogger = null
+            logSecret = emptyList()
+        } catch (failure: Exception) { factoryResetting = false; throw failure }
+    }
+
+    internal fun finishFactoryReset() { factoryResetting = false; configure() }
+
     internal fun configure() {
+        if (factoryResetting) return
         if (calls().isNotEmpty()) return
         core?.let { it.removeListener(listener) }
         dndSync?.close(); dndSync = null
@@ -513,6 +549,7 @@ class SipService : Service() {
     }
 
     private fun recordCall(log: CallLog) {
+        if (factoryResetting) return
         if (log.refKey == "sippy-dnd-fac" || dndSync?.internalLog(log) == true) return
         val incoming = log.dir == Call.Dir.Incoming
         val remote = log.remoteAddress
@@ -536,10 +573,17 @@ class SipService : Service() {
         activityStore.record(HistoryRecord(id, time, incoming, outcome, name, address, log.duration))
     }
 
+    private var codecAccount: String? = null
+    private inline fun <T> withAccountCodecs(id: String?, operation: () -> T): T {
+        codecAccount = id
+        try { applyCodecs(); return operation() }
+        finally { codecAccount = null; applyCodecs(requireEnabled = false) }
+    }
     internal fun applyCodecs(requireEnabled: Boolean = true) {
         val engine = core ?: return
         val payloads = engine.audioPayloadTypes
-        val order = prefs.codecs()
+        val order = if (codecAccount != null) prefs.accounts().firstOrNull { it.id == codecAccount }?.options?.codecs ?: prefs.codecs()
+            else Preferences.defaultCodecs.map { codec -> codec.copy(enabled = prefs.accounts().any { account -> account.options.codecs.any { it.id == codec.id && it.enabled } }) }
         val priority = order.mapIndexed { index, codec -> codec.id to index }.toMap()
         val enabled = order.filter { it.enabled }.map { it.id }.toSet()
         fun id(mime: String) = mime.lowercase(Locale.ROOT)
@@ -577,7 +621,7 @@ class SipService : Service() {
                         setVideoEnabled(false)
                         setAccount(nativeAccounts[configured.id])
                     }
-                    val call = engine.inviteAddressWithParams(target, params) ?: error("Could not start the call.")
+                    val call = withAccountCodecs(configured.id) { engine.inviteAddressWithParams(target, params) } ?: error("Could not start the call.")
                     launched = true
                     prefs.lastDialedNumber = raw
                     selected = call.nativePointer
@@ -601,7 +645,7 @@ class SipService : Service() {
                     check(find(id) != null) { "The incoming call has ended." }
                     ensureForeground()
                     val params = requireNotNull(core?.createCallParams(incoming)).apply { setVideoEnabled(false) }
-                    check(incoming.acceptWithParams(params) == 0) { "Could not answer the call." }
+                    check(withAccountCodecs(accountFor(incoming)?.id) { incoming.acceptWithParams(params) } == 0) { "Could not answer the call." }
                     answered = true
                     selected = id
                 } finally {
@@ -619,7 +663,7 @@ class SipService : Service() {
     internal fun hold(id: Long) = command {
         val call = find(id) ?: error("The call has ended.")
         check(pending == null && transferPending == null && call.state == Call.State.StreamsRunning &&
-            call.pause() == 0) { "Could not hold this call." }
+            withAccountCodecs(accountFor(call)?.id) { call.pause() } == 0) { "Could not hold this call." }
     }
 
     internal fun select(id: Long) = command {
@@ -636,7 +680,7 @@ class SipService : Service() {
         }
         afterHold(current) {
             command {
-                val resumed = find(id)?.resume() == 0
+                val resumed = find(id)?.let { withAccountCodecs(accountFor(it)?.id) { it.resume() } } == 0
                 if (!resumed) previous?.let(::restoreParked)
                 check(resumed) { "Could not resume this call." }
                 selected = id
@@ -701,7 +745,7 @@ class SipService : Service() {
     private fun restoreParked(id: Long) {
         val line = find(id) ?: return
         if (line.state == Call.State.Paused && calls().none { it.state == Call.State.StreamsRunning }) {
-            if (line.resume() == 0) selected = id
+            if (withAccountCodecs(accountFor(line)?.id) { line.resume() } == 0) selected = id
         }
     }
 
@@ -719,7 +763,7 @@ class SipService : Service() {
             reconcile()
         }
         pending = AfterHold(id, action, timeout)
-        if (call.pause() != 0) {
+        if (withAccountCodecs(accountFor(call)?.id) { call.pause() } != 0) {
             clearPending()
             error("Could not put the current line on hold.")
         }
@@ -841,7 +885,9 @@ class SipService : Service() {
             incomingLine = ringing?.id
             incomingRingtone.stop()
             if (ringing != null) incomingRingtone.start(
-                prefs.data.getString("ringtoneUri", null)?.let(Uri::parse), prefs.vibrateOnIncoming)
+                calls().firstOrNull { it.nativePointer == ringing.id }?.let(::accountFor)?.let { config ->
+                    prefs.accounts().firstOrNull { it.id == config.id }?.options?.ringtoneUri
+                }?.let(Uri::parse), prefs.vibrateOnIncoming)
             if (ringing == null) notifications.cancel(INCOMING_ID)
             else notifications.notify(INCOMING_ID, notification(ringing, true))
         }

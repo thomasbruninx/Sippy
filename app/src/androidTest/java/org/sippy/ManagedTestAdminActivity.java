@@ -21,12 +21,13 @@ public class ManagedTestAdminActivity extends Activity {
             policy.putString("appearance", "LIGHT");
             policy.putString("codecOrder", "pcmu,opus");
             policy.putString("csvUrl", "");
+            policy.putString("csvContent", "name,number\nManaged desk,401\nManaged office,402\n");
             policy.putBoolean("vibrateOnIncoming", false);
             policy.putBoolean("backgroundCalling", true);
             if ("invalid_type".equals(mode)) policy.putString("expiry", "600");
             Bundle primary = new Bundle();
             primary.putString("id", "primary"); primary.putString("name", "Managed account");
-            for (String key : new String[] {"username", "domain", "password", "transport"}) {
+            for (String key : new String[] {"username", "domain", "password", "transport", "transferMode", "codecOrder"}) {
                 primary.putString("account" + Character.toUpperCase(key.charAt(0)) + key.substring(1), policy.getString(key));
                 policy.remove(key);
             }
