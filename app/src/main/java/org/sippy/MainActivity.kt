@@ -362,7 +362,7 @@ class MainActivity : ComponentActivity() {
             renderPage(keepCallScroll = oldVisible && showCall && !closing && previous.selected == newState.selected)
         }
         if (page == Page.SETTINGS && !showEvents && settingsTab == 2 && previous.availableCodecs != newState.availableCodecs) renderPage()
-        if (page == Page.SETTINGS && !showEvents && settingsTab in setOf(0, 1, 5)) refreshSettingsStatus?.invoke()
+        if (page == Page.SETTINGS && !showEvents && settingsTab in setOf(0, 1, 5, 7)) refreshSettingsStatus?.invoke()
         if (page == Page.DIALER && (previous.outgoingAccountId != newState.outgoingAccountId || previous.outgoingAccountName != newState.outgoingAccountName || previous.dndAccounts != newState.dndAccounts)) renderPage()
         topStatus.text = newState.status
         topStatus.contentDescription = if (newState.registrationDetail != null) {

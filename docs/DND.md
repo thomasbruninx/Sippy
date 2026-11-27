@@ -6,7 +6,7 @@ DND keeps accounts registered and automatically rejects new incoming calls to th
 
 ## DND behaviour settings
 
-Open **Settings → Network**, select an account, and find **DND behaviour**. Use **Save DND behaviour** to apply changes. These settings are separate from device audio settings. Codec order, ringtone and transfer mode are also account-specific.
+Open **Settings → DND behaviour** (immediately after Network in the settings dropdown) and select an account. Use **Save DND behaviour** to apply changes. These settings are separate from device audio settings. Codec order, ringtone and transfer mode are also account-specific.
 
 | Setting | Default | Behaviour |
 | --- | --- | --- |
@@ -17,7 +17,7 @@ Open **Settings → Network**, select an account, and find **DND behaviour**. Us
 
 The emergency exception uses the caller-provided SIP header; it does not authenticate the caller as an emergency service. It cannot bypass calls blocked by the provider before they reach Sippy, or override Android’s own sound, vibration and DND policies.
 
-Changing DND behaviour applies without reconnecting accounts or ending existing calls. When disabling or replacing an active sync method, Sippy attempts to clear the old server state. A server outage or a deferred FAC request can leave server-side DND active until that reset succeeds. Check the **Server sync** status in Network settings or your provider's controls when needed.
+Changing DND behaviour applies without reconnecting accounts or ending existing calls. When disabling or replacing an active sync method, Sippy attempts to clear the old server state. A server outage or a deferred FAC request can leave server-side DND active until that reset succeeds. Check the **Server sync** status on the DND behaviour page or your provider's controls when needed.
 
 ## Server synchronization
 
@@ -49,7 +49,7 @@ Choose the appropriate **Feature event schema**:
 - **BroadSoft (CSTA ed3)** sends local changes in a SUBSCRIBE body containing `SetDoNotDisturb`, the account's SIP identity as `device`, and `doNotDisturbOn`. Server notifications contain `DoNotDisturbEvent`.
 - **3CX (CSTA ed5)** sends local changes using a SIP NOTIFY containing `DoNotDisturbEvent`, `monitorCrossRefID`, a `deviceIdentifier` containing the account's SIP identity, and `doNotDisturbOn`. The subscription is also used to receive server state when supported.
 
-These are vendor-specific integrations, not a universal SIP DND standard. Provider versions and provisioning can require different feature packages or device identifiers. Sippy accepts remote state only on its tracked subscription; it does not accept arbitrary unsolicited network notifications as commands. The Network page reports subscription, publication, timeout and send errors; local DND stays effective if server synchronization fails. When MDM enforces a state, a conflicting server notification does not override it.
+These are vendor-specific integrations, not a universal SIP DND standard. Provider versions and provisioning can require different feature packages or device identifiers. Sippy accepts remote state only on its tracked subscription; it does not accept arbitrary unsolicited network notifications as commands. The DND behaviour page reports subscription, publication, timeout and send errors; local DND stays effective if server synchronization fails. When MDM enforces a state, a conflicting server notification does not override it.
 
 Protocol references: [Kamailio's as-feature-event implementation](https://github.com/kamailio/kamailio/blob/master/src/modules/presence_dfks/add_events.c), [OpenSIPS feature package definitions](https://github.com/OpenSIPS/opensips/blob/master/modules/presence_dfks/presence_dfks.h), and [Grandstream's documented 3CX DoNotDisturbEvent format](https://firmware.grandstream.com/Release_Note_GXP21xxColor_1.0.11.48.pdf) (page 86).
 

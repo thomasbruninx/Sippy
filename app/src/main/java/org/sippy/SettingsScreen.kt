@@ -27,8 +27,8 @@ internal class SettingsScreen(private val activity: MainActivity) {
             addView(heading("Settings"), ui.weight())
             addView(ui.action("Event log", "history", click = activity::openEventLog))
         })
-        val pageIds = listOf(5, 0, 1, 2, 4, 3, 6)
-        val pages = listOf("Application", "Account(s)", "Network", "Codecs", "Sounds", "Phonebook", "LDAP")
+        val pageIds = listOf(5, 0, 1, 7, 2, 4, 3, 6)
+        val pages = listOf("Application", "Account(s)", "Network", "DND behaviour", "Codecs", "Sounds", "Phonebook", "LDAP")
         if (activity.settingsTab !in pageIds) activity.settingsTab = 5
         val selectedPage = pageIds.indexOf(activity.settingsTab)
         addView(ui.labelled("Settings page", ui.row(8).apply {
@@ -60,6 +60,7 @@ internal class SettingsScreen(private val activity: MainActivity) {
             4 -> sounds(content)
             5 -> application(content)
             6 -> ldap(content)
+            7 -> dndBehaviour(content)
         }
         addView(activity.scroll(content), LinearLayout.LayoutParams(-1, 0, 1f))
     }
@@ -198,8 +199,8 @@ internal class SettingsScreen(private val activity: MainActivity) {
     }
 
     private fun sounds(content: LinearLayout) = with(content) {
-        addView(heading("Sounds", "Choose an incoming ringtone per account. Dialpad tones and vibration apply to the device."))
-        addView(activity.accountSelector())
+        addView(heading("Sounds", "Global sound controls and an incoming ringtone for each account."))
+        addView(heading("Device sounds", "These settings apply to all accounts.", section = true))
         addView(toggle("Dialpad tones", activity.prefs.dialpadTones, managedKey = "dialpadTones").apply {
             setOnCheckedChangeListener { _, enabled -> activity.prefs.dialpadTones = enabled }
         })
@@ -214,6 +215,8 @@ internal class SettingsScreen(private val activity: MainActivity) {
             runCatching { activity.startActivity(android.content.Intent(android.provider.Settings.ACTION_SOUND_SETTINGS)) }
                 .onFailure { activity.message("Open the phone's Sound settings to check call vibration.") }
         })
+        addView(heading("Account ringtone", "Choose the account whose incoming ringtone you want to change.", section = true))
+        addView(activity.accountSelector())
         addView(ui.labelled("Incoming ringtone", ui.action(activity.settingsFiles.ringtoneLabel(), "volume",
             fill = Palette.surface, outlined = true, click = activity.settingsFiles::chooseRingtone).also { managed(it, "ringtoneUri") }))
         val preview = ui.column()
@@ -338,13 +341,13 @@ internal class SettingsScreen(private val activity: MainActivity) {
                     ipv6 = ipv6.isChecked, localPort = sip.number("SIP port"), rtpPort = rtp.number("RTP port"))
             }
         })
-        dndBehaviour(content)
     }
 
     private fun dndBehaviour(content: LinearLayout) = with(content) {
         val selected = activity.prefs.selectedAccount()
         val config = selected.dnd
-        addView(heading("DND behaviour", "DND settings for ${selected.name}. Server synchronization requires support from your SIP provider.", section = true))
+        addView(heading("DND behaviour", "Per-account DND controls. Server synchronization requires support from your SIP provider."))
+        addView(activity.accountSelector())
         val show = toggle("Show DND", config.show, managedKey = "dndShow")
         addView(show)
         addView(ui.text("When disabled, hide the dialer button and disable local DND and server synchronization for this account.", 13, Palette.secondary))
@@ -401,6 +404,7 @@ internal class SettingsScreen(private val activity: MainActivity) {
             list.removeAllViews()
             val entries = activity.prefs.codecs()
             val available = activity.sipState.availableCodecs
+            val visible = entries.filter { it.id !in setOf("g729", "amr", "amr-wb") || it.id in available }
             fun save(updated: List<Codec>) {
                 if (activity.sipState.lines.isNotEmpty()) {
                     activity.message("End all calls before changing codecs.")
@@ -419,7 +423,7 @@ internal class SettingsScreen(private val activity: MainActivity) {
                 }
                 render()
             }
-            entries.forEachIndexed { index, item ->
+            visible.forEachIndexed { index, item ->
                 val usable = item.id in available
                 val row = ui.row(5).apply {
                     ui.pad(this, 7)
@@ -437,14 +441,16 @@ internal class SettingsScreen(private val activity: MainActivity) {
                     }, ui.weight())
                     fun move(offset: Int) {
                         val changed = entries.toMutableList()
-                        changed.add(index + offset, changed.removeAt(index))
+                        val from = entries.indexOfFirst { it.id == item.id }
+                        val to = entries.indexOfFirst { it.id == visible[index + offset].id }
+                        changed.add(to, changed.removeAt(from))
                         save(changed)
                     }
                     for ((offset, symbol) in listOf(-1 to "up", 1 to "down")) {
                         addView(ui.action("", symbol, Palette.surface, outlined = true) { move(offset) }.apply {
                             val direction = if (offset == -1) "up" else "down"
                             contentDescription = "Move ${item.label} $direction"
-                            isEnabled = index + offset in entries.indices && usable && !activity.prefs.isManaged("codecs")
+                            isEnabled = index + offset in visible.indices && usable && !activity.prefs.isManaged("codecs")
                             alpha = if (isEnabled) 1f else .38f
                         }, LinearLayout.LayoutParams(ui.dp(44), -2))
                     }
@@ -456,11 +462,14 @@ internal class SettingsScreen(private val activity: MainActivity) {
     }
 
     private fun phonebook(content: LinearLayout) = with(content) {
-        addView(heading("CSV phonebook", "Import a file, export local contacts, or sync a hosted directory."))
+        addView(heading("Phonebook", "Import a CSV file, export local contacts, or sync a hosted directory."))
+        addView(heading("Import and export", "Manage CSV files stored on your device.", section = true))
         if (ManagedConfiguration.isManaged("csvContent")) addView(ui.text("Your organization controls the Imported phonebook (${activity.directory.stored(Source.CSV).size} contacts). Its inline CSV replaces previous imports. Local contacts and URL sync remain separate.", 13, Palette.secondary))
         addView(ui.action("Import a CSV file", "plus", Palette.surface, outlined = true, click = activity::importCsv).also { managed(it, "csvContent") })
         addView(ui.action("Export local contacts to CSV", fill = Palette.surface, outlined = true,
             click = activity.settingsFiles::exportLocalContacts))
+        addView(ui.text("Use UTF-8 with a number column and an optional name column. Commas, semicolons, and tabs are supported.", 13, Palette.secondary))
+        addView(heading("CSV sync", "Keep a hosted CSV directory up to date automatically.", section = true))
         val config = activity.directory.config()
         val url = addField("CSV URL", config.url, uriType, "https://pbx.example.com/phonebook.csv", managedKey = "csvUrl")
         val interval = addField("Sync interval (minutes)", config.minutes.toString(), InputType.TYPE_CLASS_NUMBER, managedKey = "csvInterval")
@@ -477,7 +486,6 @@ internal class SettingsScreen(private val activity: MainActivity) {
             }.onFailure { activity.message(it.localizedMessage ?: "Could not save sync settings.") }
         })
         addView(ui.action("Sync now", fill = Palette.surface, outlined = true) { activity.syncNow() })
-        addView(ui.text("Use UTF-8 with a number column and an optional name column. Commas, semicolons, and tabs are supported.", 13, Palette.secondary))
     }
 
     private fun toggle(label: String, enabled: Boolean, managedKey: String? = null) = Switch(activity).apply {
