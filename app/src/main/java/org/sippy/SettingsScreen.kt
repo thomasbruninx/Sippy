@@ -256,10 +256,6 @@ internal class SettingsScreen(private val activity: MainActivity) {
         activity.refreshSettingsStatus = { statuses.text = activity.sipState.accounts.joinToString("\n") { "${it.name}: ${it.status}" } }
         activity.refreshSettingsStatus?.invoke()
         addView(statuses)
-        select("Transfer mode", TransferMode.entries.map { it.label }, activity.prefs.transferMode.ordinal, managedKey = "transferMode") { selected ->
-            activity.prefs.transferMode = TransferMode.entries[selected]
-        }
-        addView(ui.text("Attended transfers use Ask first: speak to the recipient before completing the transfer.", 13, Palette.secondary))
         val user = addField("Username / extension", profile.username, uriType, managedKey = "username")
         val domain = addField("SIP domain", profile.domain, uriType, "pbx.example.com", managedKey = "domain")
         val password = addField("Password", profile.password, passwordType, managedKey = "password").apply {
@@ -280,6 +276,10 @@ internal class SettingsScreen(private val activity: MainActivity) {
         val proxy = advanced.addField("Outbound proxy", profile.proxy, uriType, "Hostname or host:port", managedKey = "proxy")
         val realm = advanced.addField("Authentication realm", profile.realm, managedKey = "realm")
         val expiry = advanced.addField("Registration expiry (seconds)", profile.expiry.toString(), InputType.TYPE_CLASS_NUMBER, managedKey = "expiry")
+        advanced.select("Transfer mode", TransferMode.entries.map { it.label }, activity.prefs.transferMode.ordinal, managedKey = "transferMode") { selected ->
+            activity.prefs.transferMode = TransferMode.entries[selected]
+        }
+        advanced.addView(ui.text("Attended transfers use Ask first: speak to the recipient before completing the transfer.", 13, Palette.secondary))
         addView(ui.action("Save and connect", "call", Palette.accent, Palette.onAccent) {
             saveSip {
                 profile.copy(username = user.value(), domain = domain.value(), password = password.text.toString(),
