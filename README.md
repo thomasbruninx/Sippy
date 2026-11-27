@@ -6,15 +6,19 @@ Sippy is an Android SIP softphone written in Kotlin and powered by Linphone. It 
 
 Features include:
 
-- Registration with a single SIP account
-- Up to four simultaneous call lines
+- Simultaneous registration with multiple named SIP accounts
+- Up to four simultaneous call lines across all accounts
 - Support for Opus, G.722, and G.711 (PCMA and PCMU) codecs
-- Configurable SIP, audio, and application settings
-- Contacts from the phone's address book, imported CSV files, synchronized remote CSV files, and LDAP directories
-- Managed configuration through mobile device management (MDM)
+- Configurable SIP, audio, and application settings, with password visibility controls
+- Per-account media encryption, codecs, ringtones and transfer modes
+- Selective settings backup and restore with MDM enforcement
+- Event-log with CSV export and configurable retention (up to 30 days)
+- Contacts from the phone's address book, imported CSV files, synchronized remote CSV files, MDM-provided CSV phonebooks, and LDAP directories
+- Managed configuration through mobile device management (MDM), including named account lists
+- Per-account Do Not Disturb, with optional presence/feature synchronization and an emergency-priority exception
 - Support for 32-bit and 64-bit ARM devices running Android 9 or later
 
-See the [usage guide](docs/USAGE.md) for setup instructions and a feature overview, or the [MDM guide](docs/MDM.md) for managed deployment and configuration.
+See the [usage guide](docs/USAGE.md) for setup instructions and a feature overview, or the [MDM guide](docs/MDM.md) for managed deployment and configuration. The [DND guide](docs/DND.md) explains local call rejection and server synchronization. The [backup and upgrade guide](docs/BACKUPS.md) covers selective settings backup, MDM-aware restore, and migration from v1.1.8.
 
 Download the latest APK from the [GitHub releases page](https://github.com/thomasbruninx/Sippy/releases).
 
@@ -29,7 +33,7 @@ Sippy has been successfully tested with the following SIP platforms:
 
 ## Build and run
 
-Clone the repository and open its local directory in Android Studio. Use JDK 21 and Android SDK 36, select the `app` run configuration, and run it on a device or emulator. To build from the command line with the same tools, run `./gradlew :app:assembleDebug`.
+Clone the repository and open its local directory in Android Studio. Use JDK 21, Android SDK 36, NDK 28.2.13676358 and CMake 3.22.1, select the `app` run configuration, and run it on a device or emulator. To build from the command line with the same tools, run `./gradlew :app:assembleDebug`.
 
 For a smaller device-specific APK, use `./gradlew :app:assembleDebug -PtargetAbi=armeabi-v7a` for older 32-bit ARM phones or `./gradlew :app:assembleDebug -PtargetAbi=arm64-v8a` for modern 64-bit ARM phones. Without `targetAbi`, the APK includes all SDK-supported architectures.
 

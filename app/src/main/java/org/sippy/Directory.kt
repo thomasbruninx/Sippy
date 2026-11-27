@@ -71,6 +71,10 @@ internal class Directory(private val context: Context) {
     }
 
     fun stored(source: Source): List<Entry> {
+        val csv = if (source == Source.CSV) ManagedConfiguration.values["csvContent"] as? String else null
+        if (csv != null) {
+            return if (csv.isBlank()) emptyList() else parseCsv(csv.byteInputStream(), Source.CSV)
+        }
         val records = JSONArray(data.getString("entries_$source", "[]"))
         return (0 until records.length()).map {
             val item = records.getJSONObject(it)
@@ -111,7 +115,10 @@ internal class Directory(private val context: Context) {
 
     fun import(input: InputStream): Int {
         val items = parseCsv(input, Source.CSV)
-        data.edit().putString("entries_CSV", records(items)).apply()
+        synchronized(ManagedConfiguration) {
+            check(!ManagedConfiguration.isManaged("csvContent")) { "The imported phonebook is managed by your organization." }
+            check(data.edit().putString("entries_CSV", records(items)).commit()) { "Could not save the imported phonebook." }
+        }
         return items.size
     }
 

@@ -74,8 +74,8 @@ internal class Ui(private val context: Context) {
             if (weight) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         }
 
-    fun heading(title: String, description: String? = null) = column(7).apply {
-        addView(text(title, 29, weight = true))
+    fun heading(title: String, description: String? = null, titleScale: Float = 1f) = column(7).apply {
+        addView(text(title, 29, weight = true).apply { textSize = 29f * titleScale })
         if (description != null) addView(text(description, 14, Palette.secondary))
     }
 
@@ -99,7 +99,35 @@ internal class Ui(private val context: Context) {
             if (field.id == View.NO_ID) field.id = View.generateViewId()
             labelView.labelFor = field.id
         })
-        addView(field, LinearLayout.LayoutParams(-1, -2))
+        val password = field is EditText && when (field.inputType and android.text.InputType.TYPE_MASK_CLASS) {
+            android.text.InputType.TYPE_CLASS_TEXT -> (field.inputType and android.text.InputType.TYPE_MASK_VARIATION) in setOf(
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD, android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)
+            android.text.InputType.TYPE_CLASS_NUMBER -> (field.inputType and android.text.InputType.TYPE_MASK_VARIATION) == android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            else -> false
+        }
+        if (password) {
+            val input = field as EditText
+            var visible = false
+            val eye = action("", "eye", fill = Palette.surface, outlined = true) {}
+            fun refreshEye() {
+                eye.contentDescription = "${if (visible) "Hide" else "Show"} $label"
+                eye.removeAllViews()
+                eye.addView(Symbol(context, if (visible) "eye-off" else "eye", Palette.accent),
+                    LinearLayout.LayoutParams(dp(22), dp(22)))
+            }
+            eye.setOnClickListener {
+                val start = input.selectionStart; val end = input.selectionEnd
+                visible = !visible
+                input.transformationMethod = if (visible) null else android.text.method.PasswordTransformationMethod.getInstance()
+                if (start >= 0 && end >= 0) input.setSelection(start.coerceAtMost(input.length()), end.coerceAtMost(input.length()))
+                refreshEye()
+            }
+            refreshEye()
+            addView(row(6).apply {
+                addView(input, weight())
+                addView(eye, LinearLayout.LayoutParams(dp(48), dp(50)))
+            })
+        } else addView(field, LinearLayout.LayoutParams(-1, -2))
     }
 
     fun action(title: String, icon: String? = null, fill: Int = Palette.soft, tint: Int = Palette.accent,
@@ -169,6 +197,12 @@ internal class Symbol(context: Context, private val kind: String, private val ti
             "backspace" -> {
                 path(10f, 5f, 21f, 5f, 21f, 19f, 10f, 19f, 3f, 12f, 10f, 5f)
                 path(12f, 9f, 17f, 15f); path(17f, 9f, 12f, 15f)
+            }
+            "dnd" -> { circle(12f, 12f, 9f); path(7f, 12f, 17f, 12f) }
+            "eye", "eye-off" -> {
+                canvas.drawOval(2f, 6f, 22f, 18f, paint)
+                circle(12f, 12f, 3f)
+                if (kind == "eye-off") path(3f, 3f, 21f, 21f)
             }
             "info" -> {
                 circle(12f, 12f, 9f)

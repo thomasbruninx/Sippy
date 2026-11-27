@@ -1,0 +1,30 @@
+{
+  "managedConfigurationEnabled": true,
+  "sipAccounts": [
+    {
+      "id": "office",
+      "name": "Office",
+      "accountLocalCredentials": true,
+      "accountDomain": "pbx.example.com",
+      "accountServer": "registrar.example.com:5061",
+      "accountTransport": "TLS",
+      "accountRegister": true,
+      "accountCodecOrder": "opus,g722,pcma,pcmu",
+      "accountTransferMode": "BOTH",
+      "accountRingtoneUri": "",
+      "accountEncryption": "None"
+    },
+    {
+      "id": "support",
+      "name": "Support",
+      "accountLocalCredentials": true,
+      "accountDomain": "support.example.com",
+      "accountServer": "registrar.support.example.com:5061",
+      "accountTransport": "TLS",
+      "accountRegister": true,
+      "accountEncryption": "None"
+    }
+  ],
+  "backgroundCalling": true,
+  "startOnBoot": true
+}

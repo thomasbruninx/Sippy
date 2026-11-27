@@ -72,7 +72,7 @@ internal class ActivityScreens(private val activity: MainActivity) {
     fun events(): View {
         var filter: EventKind? = null
         val page = listPage<EventRecord>("Event log", "SIP signaling and diagnostics", "No events match this filter.",
-            { limit, done -> store.events(filter, limit, done) }) { event ->
+            { limit, done -> store.events(filter, limit, done) }, headingScale = .8f) { event ->
             val tint = when (event.kind) {
                 EventKind.ERROR -> Palette.danger
                 EventKind.WARNING -> Palette.warning
@@ -143,10 +143,10 @@ internal class ActivityScreens(private val activity: MainActivity) {
     private data class ListPage(val root: LinearLayout, val reset: () -> Unit)
 
     private fun <T> listPage(title: String, subtitle: String, emptyText: String,
-        read: (Int, (Result<List<T>>) -> Unit) -> Unit, render: (T) -> View): ListPage {
+        read: (Int, (Result<List<T>>) -> Unit) -> Unit, headingScale: Float = 1f, render: (T) -> View): ListPage {
         val root = ui.column(9).apply {
             setPadding(ui.dp(16), ui.dp(12), ui.dp(16), ui.dp(12))
-            addView(ui.heading(title, subtitle))
+            addView(ui.heading(title, subtitle, titleScale = headingScale))
         }
         var rows = emptyList<T>()
         val list = ListView(activity).apply {

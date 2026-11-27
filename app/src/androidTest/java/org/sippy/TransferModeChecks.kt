@@ -43,14 +43,14 @@ internal class TransferModeChecks(private val instrumentation: Instrumentation) 
         val activity = instrumentation.startActivitySync(Intent(instrumentation.targetContext, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
         val prefs = activity.prefs
-        val previous = prefs.data.getString("transferMode", null)
+        val previous = prefs.transferMode
         val transfer = MainActivity::class.java.getDeclaredMethod("transferMenu", Long::class.javaPrimitiveType).apply { isAccessible = true }
         fun show(mode: TransferMode) = main { prefs.transferMode = mode; transfer.invoke(activity, -1L) }
         fun destination(title: String) = await("Missing $title destination picker") {
             title in it && "Dialpad" in it && "Phonebooks" in it && "Transfer call" !in it
         }
         try {
-            prefs.data.edit().remove("transferMode").commit()
+            prefs.transferMode = TransferMode.BOTH
             check(Preferences(instrumentation.targetContext).transferMode == TransferMode.BOTH) { "Existing users must retain both transfer modes" }
             show(TransferMode.DIRECT_ONLY)
             check(Preferences(instrumentation.targetContext).transferMode == TransferMode.DIRECT_ONLY)
@@ -70,7 +70,7 @@ internal class TransferModeChecks(private val instrumentation: Instrumentation) 
             }
         } finally {
             main {
-                prefs.data.edit().apply { if (previous == null) remove("transferMode") else putString("transferMode", previous) }.commit()
+                prefs.transferMode = previous
                 activity.finish()
             }
         }

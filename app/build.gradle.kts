@@ -5,13 +5,15 @@ plugins {
 android {
     namespace = "org.sippy"
     compileSdk = 36
+    ndkVersion = "28.2.13676358"
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
 
     defaultConfig {
         applicationId = "org.sippy"
         minSdk = 28
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.1.8"
+        versionCode = 13
+        versionName = "1.2.0"
         testInstrumentationRunner = "org.sippy.SettingsChecks"
         providers.gradleProperty("targetAbi").orNull?.let { abi ->
             require(abi in setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")) { "Unsupported targetAbi: $abi" }

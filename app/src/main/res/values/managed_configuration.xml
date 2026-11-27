@@ -64,6 +64,8 @@
     <string name="mdm_eventretentiondays">Event retention (days)</string>
     <string name="mdm_eventretentiondays_description">Omit this key to keep the local setting editable. When supplied, this value is enforced by the organization.</string>
     <string name="mdm_csvurl">CSV phonebook URL</string>
+    <string name="mdm_csvcontent">Inline CSV phonebook</string>
+    <string name="mdm_csvcontent_description">Optional CSV text with name,number headers. Maximum 64 KiB UTF-8. Replaces the Imported phonebook and prevents personal imports while managed. Local and phone contacts are kept. Empty clears the Imported phonebook. Use CSV URL for larger directories.</string>
     <string name="mdm_csvurl_description">Omit this key to keep the local setting editable. When supplied, this value is enforced by the organization.</string>
     <string name="mdm_csvinterval">CSV sync interval (minutes)</string>
     <string name="mdm_csvinterval_description">Omit this key to keep the local setting editable. When supplied, this value is enforced by the organization.</string>
@@ -93,4 +95,25 @@
     <string-array name="mdm_transfermode_labels"><item>Direct only</item><item>Attended only (Ask first)</item><item>Both</item></string-array>
     <string-array name="mdm_dtmf_labels"><item>RTP events (RFC 4733)</item><item>SIP INFO</item></string-array>
     <string-array name="mdm_encryption_labels"><item>None (RTP)</item><item>SRTP (SDES)</item><item>ZRTP</item><item>DTLS-SRTP</item></string-array>
+    <string name="mdm_accounts">SIP accounts</string>
+    <string name="mdm_accounts_description">Named SIP accounts registered simultaneously. Each account needs a unique stable ID and name. Enable Enter extension credentials in app to let users fill credentials while supplied server settings stay locked. Users may select any account; managed account settings are locked. Device media, codecs and listening ports use shared settings.</string>
+    <string name="mdm_account">SIP account</string>
+    <string name="mdm_account_id">Stable account ID</string>
+    <string name="mdm_account_name">Account name</string>
+    <string name="mdm_dnd">Do Not Disturb (decline incoming calls)</string>
+    <string name="mdm_dnd_description">When supplied, force DND on or off for accounts with Show DND enabled. Omit this value to let users control each account toggle.</string>
+    <string name="mdm_dnd_show">Show DND</string>
+    <string name="mdm_dnd_reason">RFC 3326 reason header</string>
+    <string name="mdm_dnd_sync">DND server synchronization</string>
+    <string name="mdm_dnd_fac_on">DND enable feature code</string>
+    <string name="mdm_dnd_fac_off">DND disable feature code</string>
+    <string name="mdm_dnd_fac_method">FAC signaling method</string>
+    <string name="mdm_dnd_feature_schema">Feature event schema</string>
+    <string name="mdm_dnd_priority">Emergency / Priority Exception</string>
+    <string-array name="mdm_dnd_sync_labels"><item>Disabled</item><item>SIP PUBLISH</item><item>Feature Access Codes</item><item>As-Feature-Event</item></string-array>
+    <string-array name="mdm_dnd_sync_values"><item>DISABLED</item><item>PUBLISH</item><item>FAC</item><item>AS_FEATURE_EVENT</item></string-array>
+    <string-array name="mdm_dnd_fac_methods"><item>INVITE</item><item>MESSAGE</item></string-array>
+    <string-array name="mdm_dnd_feature_schemas"><item>BROADSOFT</item><item>THREE_CX</item></string-array>
+    <string name="mdm_account_local_credentials">Enter extension credentials in app</string>
+    <string name="mdm_account_local_credentials_description">When enabled, users enter and edit the username/extension, authentication ID and password for this account in Sippy. These three policy fields are ignored even if the MDM console sends empty defaults. Other supplied account settings remain managed.</string>
 </resources>

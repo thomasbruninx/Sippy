@@ -16,26 +16,33 @@ internal class SettingsScreen(private val activity: MainActivity) {
     private val uriType = textType or InputType.TYPE_TEXT_VARIATION_URI
     private val passwordType = textType or InputType.TYPE_TEXT_VARIATION_PASSWORD
 
+    private fun heading(title: String, description: String? = null, section: Boolean = false) =
+        ui.heading(title, description, titleScale = if (section) .65f else .8f).apply {
+            setPadding(0, if (section) ui.dp(24) else 0, 0, ui.dp(4))
+        }
+
     fun build() = ui.column(9).apply {
         setPadding(ui.dp(17), ui.dp(12), ui.dp(17), ui.dp(9))
         addView(ui.row(8).apply {
-            addView(ui.heading("Settings"), ui.weight())
+            addView(heading("Settings"), ui.weight())
             addView(ui.action("Event log", "history", click = activity::openEventLog))
         })
-        val pages = listOf("Account", "Network", "Codecs", "Phonebook", "Sounds", "Application", "LDAP")
-        activity.settingsTab = activity.settingsTab.coerceIn(pages.indices)
+        val pageIds = listOf(5, 0, 1, 7, 2, 4, 3, 6)
+        val pages = listOf("Application", "Account(s)", "Network", "DND behaviour", "Codecs", "Sounds", "Phonebook", "LDAP")
+        if (activity.settingsTab !in pageIds) activity.settingsTab = 5
+        val selectedPage = pageIds.indexOf(activity.settingsTab)
         addView(ui.labelled("Settings page", ui.row(8).apply {
             background = ui.ripple(Palette.surface, 12, Palette.border)
             minimumHeight = ui.dp(49)
             setPadding(ui.dp(13), 0, ui.dp(12), 0)
-            addView(ui.text(pages[activity.settingsTab], 15, weight = true), ui.weight())
+            addView(ui.text(pages[selectedPage], 15, weight = true), ui.weight())
             addView(Symbol(activity, "down", Palette.accent), LinearLayout.LayoutParams(ui.dp(20), ui.dp(20)))
-            contentDescription = "Settings page: ${pages[activity.settingsTab]}"
+            contentDescription = "Settings page: ${pages[selectedPage]}"
             isFocusable = true
             setOnClickListener {
                 activity.popup(this, pages) { selected ->
-                    if (selected != activity.settingsTab) {
-                        activity.settingsTab = selected
+                    if (pageIds[selected] != activity.settingsTab) {
+                        activity.settingsTab = pageIds[selected]
                         activity.renderPage()
                     }
                 }
@@ -46,29 +53,21 @@ internal class SettingsScreen(private val activity: MainActivity) {
             13, Palette.secondary))
         val content = ui.column(13).apply { setPadding(0, ui.dp(4), 0, ui.dp(10)) }
         when (activity.settingsTab) {
-            0 -> {
-                account(content)
-                content.addView(ui.heading("SIP settings backup", "Export saved settings or restore them from a JSON file.").apply {
-                    setPadding(0, ui.dp(15), 0, 0)
-                })
-                content.addView(ui.action("Export SIP settings", fill = Palette.surface, outlined = true,
-                    click = activity.settingsFiles::export))
-                content.addView(ui.action("Import SIP settings", fill = Palette.surface, outlined = true,
-                    click = activity.settingsFiles::import))
-            }
+            0 -> account(content)
             1 -> network(content)
             2 -> codecs(content)
             3 -> phonebook(content)
             4 -> sounds(content)
             5 -> application(content)
             6 -> ldap(content)
+            7 -> dndBehaviour(content)
         }
         addView(activity.scroll(content), LinearLayout.LayoutParams(-1, 0, 1f))
     }
 
     private fun ldap(content: LinearLayout) = with(content) {
         val config = activity.prefs.ldap()
-        addView(ui.heading("LDAP directory", "Company contacts appear separately under Contacts → LDAP directory. Passwords are stored encrypted on this device."))
+        addView(heading("LDAP directory", "Company contacts appear separately under Contacts → LDAP directory. Passwords are stored encrypted on this device."))
         val enabled = toggle("Enable LDAP directory", activity.prefs.ldapEnabled, managedKey = "ldapEnabled")
         addView(enabled)
         addView(ui.text("Show the LDAP directory selector in Contacts. Turning this off keeps your saved connection settings.", 13, Palette.secondary))
@@ -141,20 +140,16 @@ internal class SettingsScreen(private val activity: MainActivity) {
     }
 
     private fun application(content: LinearLayout) = with(content) {
-        addView(ui.heading("Application", "Manage Sippy's application settings and permissions."))
+        addView(heading("Application", "Manage Sippy's application settings and permissions."))
         addView(ui.text(ManagedConfiguration.status, 13, Palette.secondary))
         val pendingPolicy = ui.text("", 13, Palette.secondary)
         addView(pendingPolicy)
         select("Appearance", Appearance.entries.map { it.label }, activity.prefs.appearance.ordinal, managedKey = "appearance") { selected ->
             activity.setAppearance(Appearance.entries[selected])
         }
-        select("Transfer mode", TransferMode.entries.map { it.label }, activity.prefs.transferMode.ordinal, managedKey = "transferMode") { selected ->
-            activity.prefs.transferMode = TransferMode.entries[selected]
-        }
-        addView(ui.text("Attended transfers use Ask first: speak to the recipient before completing the transfer.", 13, Palette.secondary))
         addView(ui.action("Check permissions", "settings", fill = Palette.surface,
             outlined = true, click = activity::checkPermissions))
-        addView(ui.heading("Background calls", "Keep Sippy connected after closing the app. An ongoing notification shows the connection status."))
+        addView(heading("Background calls", "Keep Sippy connected after closing the app. An ongoing notification shows the connection status.", section = true))
         val startup = toggle("Start after phone restart", activity.prefs.startOnBoot, managedKey = "startOnBoot").apply {
             isEnabled = activity.prefs.backgroundCalling && !activity.prefs.isManaged("startOnBoot")
             setOnCheckedChangeListener { _, enabled -> activity.prefs.startOnBoot = enabled }
@@ -182,10 +177,16 @@ internal class SettingsScreen(private val activity: MainActivity) {
         activity.refreshSettingsStatus?.invoke()
         addView(ui.action("Background battery settings", "settings", fill = Palette.surface,
             outlined = true, click = activity::openBatterySettings))
+        addView(heading("Settings backup", "Choose which settings to export or restore. Contacts, history and event logs are not included.", section = true))
+        addView(ui.action("Export settings", fill = Palette.surface, outlined = true, click = activity.settingsFiles::export))
+        addView(ui.action("Import settings", fill = Palette.surface, outlined = true, click = activity.settingsFiles::import))
+        addView(heading("Troubleshooting", "Export diagnostic events or reset Sippy's local data.", section = true))
+        addView(ui.action("Export event log (CSV)", fill = Palette.surface, outlined = true, click = activity.settingsFiles::exportEvents))
+        addView(ui.action("Factory reset", fill = Palette.surface, outlined = true, click = activity::confirmFactoryReset))
         @Suppress("DEPRECATION")
         val version = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName
         addView(ui.column(6).apply {
-            setPadding(0, ui.dp(15), 0, 0)
+            setPadding(0, ui.dp(24), 0, 0)
             addView(ui.text("Version $version", 16, weight = true))
             addView(ui.text("Made by Thomas Bruninx", 14, Palette.secondary))
             addView(ui.action("License", "info", fill = Palette.surface, outlined = true) {
@@ -198,7 +199,8 @@ internal class SettingsScreen(private val activity: MainActivity) {
     }
 
     private fun sounds(content: LinearLayout) = with(content) {
-        addView(ui.heading("Sounds", "Choose your incoming ringtone and dialpad sounds."))
+        addView(heading("Sounds", "Global sound controls and an incoming ringtone for each account."))
+        addView(heading("Device sounds", "These settings apply to all accounts.", section = true))
         addView(toggle("Dialpad tones", activity.prefs.dialpadTones, managedKey = "dialpadTones").apply {
             setOnCheckedChangeListener { _, enabled -> activity.prefs.dialpadTones = enabled }
         })
@@ -213,6 +215,8 @@ internal class SettingsScreen(private val activity: MainActivity) {
             runCatching { activity.startActivity(android.content.Intent(android.provider.Settings.ACTION_SOUND_SETTINGS)) }
                 .onFailure { activity.message("Open the phone's Sound settings to check call vibration.") }
         })
+        addView(heading("Account ringtone", "Choose the account whose incoming ringtone you want to change.", section = true))
+        addView(activity.accountSelector())
         addView(ui.labelled("Incoming ringtone", ui.action(activity.settingsFiles.ringtoneLabel(), "volume",
             fill = Palette.surface, outlined = true, click = activity.settingsFiles::chooseRingtone).also { managed(it, "ringtoneUri") }))
         val preview = ui.column()
@@ -228,7 +232,30 @@ internal class SettingsScreen(private val activity: MainActivity) {
     }
 
     private fun account(content: LinearLayout) = with(content) {
-        addView(ui.heading("SIP account", "Connect an extension from your provider or PBX."))
+        addView(heading("SIP accounts", "Configured accounts stay registered together. Select the account to edit or use for outgoing calls."))
+        addView(activity.accountSelector())
+        val selected = activity.prefs.selectedAccount()
+        addView(ui.row(7).apply {
+            addView(ui.action("Add account", "plus", fill = Palette.surface, outlined = true) { accountName() }, ui.weight())
+            if (!selected.managed) {
+                addView(ui.action("Rename", fill = Palette.surface, outlined = true) { accountName(rename = true) }, ui.weight())
+                addView(ui.action("Delete", fill = Palette.surface, outlined = true) {
+                    if (!accountIdle()) return@action
+                    android.app.AlertDialog.Builder(activity).setTitle("Delete ${selected.name}?")
+                        .setMessage("Remove this SIP account and its saved credentials?")
+                        .setNegativeButton("Cancel", null).setPositiveButton("Delete") { _, _ ->
+                            if (accountIdle()) runCatching {
+                                activity.prefs.removeAccount(); activity.sip?.configure(); activity.renderPage()
+                            }.onFailure { activity.message(it.localizedMessage ?: "Could not delete account.") }
+                        }.show()
+                }, ui.weight())
+            }
+        })
+        if (selected.managed) addView(ui.text("This account is provided by your organization. Fields marked Managed are locked; other settings can be edited.", 13, Palette.secondary))
+        val statuses = ui.text("", 13, Palette.secondary)
+        activity.refreshSettingsStatus = { statuses.text = activity.sipState.accounts.joinToString("\n") { "${it.name}: ${it.status}" } }
+        activity.refreshSettingsStatus?.invoke()
+        addView(statuses)
         val user = addField("Username / extension", profile.username, uriType, managedKey = "username")
         val domain = addField("SIP domain", profile.domain, uriType, "pbx.example.com", managedKey = "domain")
         val password = addField("Password", profile.password, passwordType, managedKey = "password").apply {
@@ -249,6 +276,10 @@ internal class SettingsScreen(private val activity: MainActivity) {
         val proxy = advanced.addField("Outbound proxy", profile.proxy, uriType, "Hostname or host:port", managedKey = "proxy")
         val realm = advanced.addField("Authentication realm", profile.realm, managedKey = "realm")
         val expiry = advanced.addField("Registration expiry (seconds)", profile.expiry.toString(), InputType.TYPE_CLASS_NUMBER, managedKey = "expiry")
+        advanced.select("Transfer mode", TransferMode.entries.map { it.label }, activity.prefs.transferMode.ordinal, managedKey = "transferMode") { selected ->
+            activity.prefs.transferMode = TransferMode.entries[selected]
+        }
+        advanced.addView(ui.text("Attended transfers use Ask first: speak to the recipient before completing the transfer.", 13, Palette.secondary))
         addView(ui.action("Save and connect", "call", Palette.accent, Palette.onAccent) {
             saveSip {
                 profile.copy(username = user.value(), domain = domain.value(), password = password.text.toString(),
@@ -258,19 +289,36 @@ internal class SettingsScreen(private val activity: MainActivity) {
         })
     }
 
+    private fun accountIdle(): Boolean {
+        if (activity.sipState.lines.isEmpty()) return true
+        activity.message("End all calls before changing SIP accounts.")
+        return false
+    }
+
+    private fun accountName(rename: Boolean = false) {
+        if (!accountIdle()) return
+        val input = ui.field("Account name", if (rename) activity.prefs.selectedAccount().name else "")
+        val dialog = android.app.AlertDialog.Builder(activity).setTitle(if (rename) "Rename account" else "Add SIP account")
+            .setView(ui.column().apply { ui.pad(this, 20); addView(input) })
+            .setNegativeButton("Cancel", null).setPositiveButton("Save", null).show()
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            if (accountIdle()) runCatching {
+                if (rename) activity.prefs.renameAccount(input.value()) else activity.prefs.addAccount(input.value())
+                activity.sip?.configure()
+                dialog.dismiss()
+                activity.renderPage()
+            }.onFailure { input.error = it.localizedMessage ?: "Could not save account." }
+        }
+    }
+
     private fun network(content: LinearLayout) = with(content) {
-        addView(ui.heading("Network and media", "Configure transport, NAT traversal, and in-call signaling."))
-        val transports = Transport.entries
-        val transport = select("SIP transport", transports.map { it.name }, profile.transport.ordinal, managedKey = "transport")
-        val encryptions = Encryption.entries
-        val encryption = select("Media encryption", encryptions.map { it.label }, profile.encryption.ordinal, managedKey = "encryption")
+        addView(heading("Network", "Shared device controls and separate network settings for each SIP account."))
+        addView(heading("Global network settings", "These settings apply to every account. End all calls before saving; changes reconnect all accounts.", section = true))
         val modes = Dtmf.entries
         val dtmf = select("DTMF method", modes.map { it.label }, profile.dtmf.ordinal, managedKey = "dtmf")
-        val stun = addField("STUN server", profile.stun, uriType, "stun.example.com:3478", managedKey = "stun")
-        val ice = toggle("Enable ICE", profile.ice, managedKey = "ice")
         val echo = toggle("Echo cancellation", profile.echoCancellation, managedKey = "echo")
         val ipv6 = toggle("Enable IPv6", profile.ipv6, managedKey = "ipv6")
-        addView(ice); addView(echo); addView(ipv6)
+        addView(echo); addView(ipv6)
         val advanced = ui.column(12)
         advanced.visibility = View.GONE
         addView(ui.action("Local ports", "down", Palette.surface, outlined = true) {
@@ -279,13 +327,75 @@ internal class SettingsScreen(private val activity: MainActivity) {
         addView(advanced)
         val sip = advanced.addField("Local SIP port (0 for automatic)", profile.localPort.toString(), InputType.TYPE_CLASS_NUMBER, managedKey = "localPort")
         val rtp = advanced.addField("Local RTP port (0 for automatic)", profile.rtpPort.toString(), InputType.TYPE_CLASS_NUMBER, managedKey = "rtpPort")
-        addView(ui.action("Save network settings", fill = Palette.accent, tint = Palette.onAccent) {
+        addView(ui.action("Save global network settings") {
+            if (activity.sipState.lines.isNotEmpty()) { activity.message("End all calls before changing network settings."); return@action }
+            runCatching {
+                val global = SipProfile(dtmf = modes[dtmf()], echoCancellation = echo.isChecked, ipv6 = ipv6.isChecked,
+                    localPort = sip.number("SIP port"), rtpPort = rtp.number("RTP port"))
+                global.validate(requireAccount = false)
+                activity.prefs.saveGlobalNetwork(global)
+                activity.sip?.configure()
+            }.onSuccess { activity.message("Global network settings saved.") }
+                .onFailure { activity.message(it.localizedMessage ?: "Could not save global network settings.") }
+        })
+        addView(heading("Account network settings", "Transport, media encryption, STUN and ICE apply only to the account selected below.", section = true))
+        addView(activity.accountSelector())
+        val transports = Transport.entries
+        val transport = select("SIP transport", transports.map { it.name }, profile.transport.ordinal, managedKey = "transport")
+        val encryptions = Encryption.entries
+        val encryption = select("Media encryption", encryptions.map { it.label }, profile.encryption.ordinal, managedKey = "encryption")
+        addView(ui.text("Encrypted modes require their selected encryption method; a call that cannot negotiate it is rejected.", 13, Palette.secondary))
+        val stun = addField("STUN server", profile.stun, uriType, "stun.example.com:3478", managedKey = "stun")
+        val ice = toggle("Enable ICE", profile.ice, managedKey = "ice")
+        addView(ice)
+        addView(ui.action("Save account network settings") {
             saveSip(validateAccount = false) {
-                profile.copy(transport = transports[transport()], encryption = encryptions[encryption()], dtmf = modes[dtmf()],
-                    stun = stun.value(), ice = ice.isChecked, echoCancellation = echo.isChecked,
-                    ipv6 = ipv6.isChecked, localPort = sip.number("SIP port"), rtpPort = rtp.number("RTP port"))
+                // Read shared values again so saving this section cannot revert a global edit.
+                activity.prefs.profile().copy(transport = transports[transport()], encryption = encryptions[encryption()],
+                    stun = stun.value(), ice = ice.isChecked)
             }
         })
+    }
+
+    private fun dndBehaviour(content: LinearLayout) = with(content) {
+        val selected = activity.prefs.selectedAccount()
+        val config = selected.dnd
+        addView(heading("DND behaviour", "Per-account DND controls. Server synchronization requires support from your SIP provider."))
+        addView(activity.accountSelector())
+        val show = toggle("Show DND", config.show, managedKey = "dndShow")
+        addView(show)
+        addView(ui.text("When disabled, hide the dialer button and disable local DND and server synchronization for this account.", 13, Palette.secondary))
+        val reason = toggle("RFC 3326 reason header", config.reasonHeader, managedKey = "dndReasonHeader")
+        addView(reason)
+        val facArea = ui.column(12)
+        val featureArea = ui.column(12)
+        fun mode(index: Int) {
+            facArea.visibility = if (DndServerSync.entries[index] == DndServerSync.FAC) View.VISIBLE else View.GONE
+            featureArea.visibility = if (DndServerSync.entries[index] == DndServerSync.AS_FEATURE_EVENT) View.VISIBLE else View.GONE
+        }
+        val sync = select("Server-Sync (Shared Presence & BLF)", DndServerSync.entries.map { it.label }, config.serverSync.ordinal,
+            managedKey = "dndServerSync", onSelected = ::mode)
+        val facOn = facArea.addField("DND enable code", config.facOn, managedKey = "dndFacOn")
+        val facOff = facArea.addField("DND disable code", config.facOff, managedKey = "dndFacOff")
+        val facMethod = facArea.select("FAC signaling", DndFacMethod.entries.map { "SIP ${it.name}" }, config.facMethod.ordinal, managedKey = "dndFacMethod")
+        facArea.addView(ui.text("INVITE uses inactive audio and no dialer UI, and waits until current calls end. MESSAGE sends a text SIP request without opening an audio call.", 13, Palette.secondary))
+        val schema = featureArea.select("Feature event schema", DndFeatureSchema.entries.map { it.label }, config.featureSchema.ordinal, managedKey = "dndFeatureSchema")
+        addView(facArea); addView(featureArea); mode(config.serverSync.ordinal)
+        val priority = toggle("Emergency / Priority Exception", config.priorityException, managedKey = "dndPriorityException")
+        addView(priority)
+        addView(ui.text("Allow incoming calls carrying Priority: emergency to bypass local DND. This uses the caller-provided SIP header; it does not verify the caller's identity.", 13, Palette.secondary))
+        val status = ui.text("", 13, Palette.secondary)
+        activity.refreshSettingsStatus = { status.text = "Server sync: ${activity.sip?.dndSyncStatus(selected.id) ?: "SIP is starting"}" }
+        activity.refreshSettingsStatus?.invoke()
+        addView(status)
+        addView(ui.action("Save DND behaviour") {
+            runCatching {
+                activity.prefs.saveDnd(DndSettings(show.isChecked, reason.isChecked, DndServerSync.entries[sync()],
+                    facOn.value(), facOff.value(), DndFacMethod.entries[facMethod()], DndFeatureSchema.entries[schema()], priority.isChecked))
+                activity.sip?.updateDndBehaviour()
+                activity.message("DND behaviour saved.")
+            }.onFailure { activity.message(it.localizedMessage ?: "Could not save DND behaviour.") }
+        }.apply { isEnabled = DndSettings.keys.any { !activity.prefs.isManaged(it) } })
     }
 
     private fun saveSip(validateAccount: Boolean = true, build: () -> SipProfile) {
@@ -300,13 +410,15 @@ internal class SettingsScreen(private val activity: MainActivity) {
     }
 
     private fun codecs(content: LinearLayout) = with(content) {
-        addView(ui.heading("Audio codecs", if (activity.prefs.isManaged("codecs")) "Codec settings are managed by your organization." else "Enabled codecs are offered in priority order for new calls."))
+        addView(activity.accountSelector())
+        addView(heading("Audio codecs", if (activity.prefs.isManaged("codecs")) "Codec settings are managed by your organization." else "Enabled codecs are offered in priority order for new calls."))
         val list = ui.column(8)
         addView(list)
         fun render() {
             list.removeAllViews()
             val entries = activity.prefs.codecs()
             val available = activity.sipState.availableCodecs
+            val visible = entries.filter { it.id !in setOf("g729", "amr", "amr-wb") || it.id in available }
             fun save(updated: List<Codec>) {
                 if (activity.sipState.lines.isNotEmpty()) {
                     activity.message("End all calls before changing codecs.")
@@ -325,7 +437,7 @@ internal class SettingsScreen(private val activity: MainActivity) {
                 }
                 render()
             }
-            entries.forEachIndexed { index, item ->
+            visible.forEachIndexed { index, item ->
                 val usable = item.id in available
                 val row = ui.row(5).apply {
                     ui.pad(this, 7)
@@ -343,14 +455,16 @@ internal class SettingsScreen(private val activity: MainActivity) {
                     }, ui.weight())
                     fun move(offset: Int) {
                         val changed = entries.toMutableList()
-                        changed.add(index + offset, changed.removeAt(index))
+                        val from = entries.indexOfFirst { it.id == item.id }
+                        val to = entries.indexOfFirst { it.id == visible[index + offset].id }
+                        changed.add(to, changed.removeAt(from))
                         save(changed)
                     }
                     for ((offset, symbol) in listOf(-1 to "up", 1 to "down")) {
                         addView(ui.action("", symbol, Palette.surface, outlined = true) { move(offset) }.apply {
                             val direction = if (offset == -1) "up" else "down"
                             contentDescription = "Move ${item.label} $direction"
-                            isEnabled = index + offset in entries.indices && usable && !activity.prefs.isManaged("codecs")
+                            isEnabled = index + offset in visible.indices && usable && !activity.prefs.isManaged("codecs")
                             alpha = if (isEnabled) 1f else .38f
                         }, LinearLayout.LayoutParams(ui.dp(44), -2))
                     }
@@ -362,10 +476,14 @@ internal class SettingsScreen(private val activity: MainActivity) {
     }
 
     private fun phonebook(content: LinearLayout) = with(content) {
-        addView(ui.heading("CSV phonebook", "Import a file, export local contacts, or sync a hosted directory."))
-        addView(ui.action("Import a CSV file", "plus", Palette.surface, outlined = true, click = activity::importCsv))
+        addView(heading("Phonebook", "Import a CSV file, export local contacts, or sync a hosted directory."))
+        addView(heading("Import and export", "Manage CSV files stored on your device.", section = true))
+        if (ManagedConfiguration.isManaged("csvContent")) addView(ui.text("Your organization controls the Imported phonebook (${activity.directory.stored(Source.CSV).size} contacts). Its inline CSV replaces previous imports. Local contacts and URL sync remain separate.", 13, Palette.secondary))
+        addView(ui.action("Import a CSV file", "plus", Palette.surface, outlined = true, click = activity::importCsv).also { managed(it, "csvContent") })
         addView(ui.action("Export local contacts to CSV", fill = Palette.surface, outlined = true,
             click = activity.settingsFiles::exportLocalContacts))
+        addView(ui.text("Use UTF-8 with a number column and an optional name column. Commas, semicolons, and tabs are supported.", 13, Palette.secondary))
+        addView(heading("CSV sync", "Keep a hosted CSV directory up to date automatically.", section = true))
         val config = activity.directory.config()
         val url = addField("CSV URL", config.url, uriType, "https://pbx.example.com/phonebook.csv", managedKey = "csvUrl")
         val interval = addField("Sync interval (minutes)", config.minutes.toString(), InputType.TYPE_CLASS_NUMBER, managedKey = "csvInterval")
@@ -382,7 +500,6 @@ internal class SettingsScreen(private val activity: MainActivity) {
             }.onFailure { activity.message(it.localizedMessage ?: "Could not save sync settings.") }
         })
         addView(ui.action("Sync now", fill = Palette.surface, outlined = true) { activity.syncNow() })
-        addView(ui.text("Use UTF-8 with a number column and an optional name column. Commas, semicolons, and tabs are supported.", 13, Palette.secondary))
     }
 
     private fun toggle(label: String, enabled: Boolean, managedKey: String? = null) = Switch(activity).apply {

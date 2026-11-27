@@ -1,19 +1,21 @@
 {
   "managedConfigurationEnabled": true,
-  "username": "201",
-  "authUser": "201",
-  "password": "REPLACE_WITH_DEVICE_SPECIFIC_SECRET",
-  "displayName": "Office phone",
-  "domain": "pbx.example.com",
-  "transport": "TLS",
-  "server": "pbx.example.com:5061",
-  "register": true,
-  "codecOrder": "opus,g722,pcma,pcmu",
-  "transferMode": "BOTH",
-  "appearance": "SYSTEM",
+  "sipAccounts": [
+    {
+      "id": "office",
+      "name": "Office",
+      "accountLocalCredentials": true,
+      "accountDomain": "pbx.example.com",
+      "accountServer": "registrar.example.com:5061",
+      "accountTransport": "TLS",
+      "accountRegister": true,
+      "accountCodecOrder": "opus,g722,pcma,pcmu",
+      "accountTransferMode": "BOTH",
+      "accountRingtoneUri": "",
+      "accountEncryption": "None"
+    }
+  ],
   "backgroundCalling": true,
   "startOnBoot": true,
-  "dialpadTones": true,
-  "vibrateOnIncoming": true,
-  "ldapEnabled": false
+  "csvContent": "name,number\nReception,100\nSupport,101\n"
 }
