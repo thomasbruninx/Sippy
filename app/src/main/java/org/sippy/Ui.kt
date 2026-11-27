@@ -74,8 +74,8 @@ internal class Ui(private val context: Context) {
             if (weight) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         }
 
-    fun heading(title: String, description: String? = null) = column(7).apply {
-        addView(text(title, 29, weight = true))
+    fun heading(title: String, description: String? = null, titleScale: Float = 1f) = column(7).apply {
+        addView(text(title, 29, weight = true).apply { textSize = 29f * titleScale })
         if (description != null) addView(text(description, 14, Palette.secondary))
     }
 
