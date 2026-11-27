@@ -25,6 +25,7 @@ Sippy has been successfully tested with the following SIP platforms:
 - NEC SV9100 (CP20)
 - RingCentral
 - Asterisk (24)
+- Unifi Talk
 
 ## Build and run
 
