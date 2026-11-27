@@ -33,11 +33,13 @@ internal class SettingsBackupChecks(private val instrumentation: Instrumentation
                 prefs.data.edit().remove("sipAccountsLocal").remove("sipAccountOverrides")
                     .putString("codecs", AccountOptions.codecJson(AccountOptions.codecOrder("pcmu,pcma")).toString())
                     .putString("ringtoneUri", Uri.fromFile(tone).toString()).putString("ringtoneName", "Upgrade ringtone")
+                    .putString("encryption", "SRTP")
                     .putString("transferMode", "ATTENDED_ONLY").putString("appearance", "DARK")
                     .putBoolean("dialpadTones", false).putBoolean("vibrateOnIncoming", true).putInt("eventRetentionDays", 7).commit()
                 val migrated = Preferences(context).selectedAccount()
                 check(migrated.id == "default" && migrated.name == "Default account")
                 check(migrated.profile.password == "UPGRADE_SIP_SECRET" && migrated.profile.authUser == "auth201")
+                check(migrated.profile.encryption == Encryption.SRTP)
                 check(migrated.options.codecs.take(2).map { it.id } == listOf("pcmu","pcma"))
                 check(migrated.options.ringtoneUri == Uri.fromFile(tone).toString() && migrated.options.transferMode == TransferMode.ATTENDED_ONLY)
                 check(prefs.appearance == Appearance.DARK && !prefs.dialpadTones && prefs.vibrateOnIncoming)
@@ -52,6 +54,7 @@ internal class SettingsBackupChecks(private val instrumentation: Instrumentation
                 prefs.data.edit().putString("csvUrl","https://example.com/contacts.csv").putInt("csvInterval",90).commit()
             }
             val exported = backup.export(all).root
+            check(!exported.getJSONObject("network").has("encryption"))
             val noPasswords = backup.export(all - BackupSection.PASSWORDS).root.toString()
             check(!noPasswords.contains("UPGRADE_SIP_SECRET") && !noPasswords.contains("LDAP_LOCAL_SECRET"))
             check(exported.toString().contains("UPGRADE_SIP_SECRET") && exported.toString().contains("LDAP_LOCAL_SECRET"))
@@ -64,6 +67,7 @@ internal class SettingsBackupChecks(private val instrumentation: Instrumentation
                 check(prefs.transferMode == TransferMode.DIRECT_ONLY && prefs.codecs().first().id == "pcma")
                 prefs.selectAccount(prefs.accounts().first { it.name == "Office" }.id)
                 check(prefs.transferMode == TransferMode.ATTENDED_ONLY && prefs.profile().password == "UPGRADE_SIP_SECRET")
+                check(prefs.profile().encryption == Encryption.SRTP)
                 val restoredTone = File(Uri.parse(prefs.selectedAccount().options.ringtoneUri).path!!)
                 check(restoredTone != tone && restoredTone.readBytes().contentEquals(tone.readBytes()))
                 check(prefs.appearance == Appearance.DARK && prefs.ldap().password == "LDAP_LOCAL_SECRET")
@@ -76,12 +80,22 @@ internal class SettingsBackupChecks(private val instrumentation: Instrumentation
                 val broken = JSONObject(exported.toString()).apply { getJSONObject("application").put("eventRetentionDays",0) }
                 check(runCatching { backup.restore(broken,all) }.isFailure)
                 check(prefs.localSnapshot() == beforeFailure) { "Failed import did not roll back settings" }
+                val legacyShared = JSONObject(exported.toString())
+                val legacyAccounts = legacyShared.getJSONArray("accounts")
+                for (i in 0 until legacyAccounts.length()) legacyAccounts.getJSONObject(i).getJSONObject("account").remove("encryption")
+                legacyShared.getJSONObject("network").put("encryption", "DTLS")
+                val skippedEncryption = backup.restore(legacyShared, setOf(BackupSection.NETWORK))
+                check(prefs.profile().encryption == Encryption.SRTP && skippedEncryption.notes.any { it.contains("encryption was skipped") })
+                backup.restore(legacyShared, setOf(BackupSection.ACCOUNTS))
+                check(prefs.accounts().filter { it.name in setOf("Office", "Home") }.all { it.profile.encryption == Encryption.DTLS })
+                backup.restore(exported, all)
             }
             val managed = Bundle().apply {
                 putString("id","managed-office"); putString("name","Managed Office"); putString("accountUsername","300")
                 putString("accountDomain","127.0.0.3"); putString("accountServer","127.0.0.3:5090"); putBoolean("accountRegister",false)
                 putString("accountPassword","ADMIN_SIP_SECRET"); putString("accountCodecOrder","pcmu")
                 putString("accountRingtoneUri",""); putString("accountTransferMode","DIRECT_ONLY")
+                putString("accountEncryption", "SRTP")
             }
             main {
                 ManagedConfiguration.apply(context,Bundle().apply {
@@ -89,14 +103,24 @@ internal class SettingsBackupChecks(private val instrumentation: Instrumentation
                     putParcelableArray("sipAccounts",arrayOf(managed))
                 })
                 prefs.selectAccount("managed:managed-office")
-                check(prefs.isManaged("codecs") && prefs.isManaged("ringtoneUri") && prefs.isManaged("transferMode"))
+                check(prefs.isManaged("codecs") && prefs.isManaged("ringtoneUri") && prefs.isManaged("transferMode") && prefs.isManaged("encryption"))
+                val lastValidPolicy = ManagedConfiguration.values
+                ManagedConfiguration.apply(context, Bundle().apply {
+                    putBoolean("managedConfigurationEnabled", true); putString("encryption", "None")
+                    putParcelableArray("sipAccounts", arrayOf(managed))
+                })
+                check(ManagedConfiguration.error?.contains("accountEncryption") == true && ManagedConfiguration.values == lastValidPolicy)
+                ManagedConfiguration.apply(context, Bundle().apply {
+                    putBoolean("managedConfigurationEnabled", true); putString("appearance", "LIGHT")
+                    putParcelableArray("sipAccounts", arrayOf(managed))
+                })
             }
             val managedExport = backup.export(all)
             check(!managedExport.root.toString().contains("ADMIN_SIP_SECRET")) { "Managed SIP password was exported" }
             check(managedExport.notes.any { it.contains("MDM-managed SIP password") })
             val records = managedExport.root.getJSONArray("accounts")
             val record = (0 until records.length()).map(records::getJSONObject).first { it.getString("id")=="managed:managed-office" }
-            record.getJSONObject("account").put("username","attack").put("password","IMPORTED_PASSWORD").put("domain","blocked.invalid")
+            record.getJSONObject("account").put("username","attack").put("password","IMPORTED_PASSWORD").put("domain","blocked.invalid").put("encryption", "None")
             record.put("transferMode","BOTH").put("codecs",AccountOptions.codecJson(AccountOptions.codecOrder("pcma")))
             record.getJSONObject("ringtone").put("uri","https://invalid.example/ignored.wav")
             managedExport.root.getJSONObject("application").put("appearance","DARK")
@@ -105,6 +129,7 @@ internal class SettingsBackupChecks(private val instrumentation: Instrumentation
                 prefs.selectAccount("managed:managed-office")
                 check(report.skipped.any { it.contains("password") } && report.skipped.any { it.contains("codecs") }) { report.text() }
                 check(prefs.profile().username=="300" && prefs.profile().password=="ADMIN_SIP_SECRET" && prefs.profile().domain=="127.0.0.3")
+                check(prefs.profile().encryption==Encryption.SRTP && report.skipped.any { it.contains("encryption") })
                 check(prefs.codecs().first().id=="pcmu" && prefs.transferMode==TransferMode.DIRECT_ONLY && prefs.selectedAccount().options.ringtoneUri==null)
                 check(prefs.appearance==Appearance.LIGHT)
                 check(prefs.localSnapshot().values.none { it.toString().contains("ADMIN_SIP_SECRET") })

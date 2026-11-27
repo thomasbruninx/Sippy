@@ -2,7 +2,7 @@
 
 Open **Settings → Application → Settings backup**. Export and import each show a checkbox list so you can choose the configuration categories to include:
 
-- SIP accounts and the outgoing-account selection
+- SIP accounts, per-account media encryption and the outgoing-account selection
 - Account audio codecs
 - Account ringtones, including custom WAV/MP3 audio
 - Account transfer modes
@@ -40,8 +40,10 @@ Android built-in ringtone references are restored when accessible on the destina
 
 ## Upgrading from v1.1.8
 
-Updating the installed app with the same package and signing identity preserves its data. On first access, Sippy converts the old single SIP profile into a named **Default account**, retaining the extension, authentication ID, encrypted password, domain, registrar, transport and NAT settings. Its old codec order, ringtone selection and transfer mode are copied into that account's options. The migration also handles accounts created in earlier development builds of v1.2.0 that still used shared options.
+Updating the installed app with the same package and signing identity preserves its data. On first access, Sippy converts the old single SIP profile into a named **Default account**, retaining the extension, authentication ID, encrypted password, domain, registrar, transport, media encryption and NAT settings. Its old codec order, ringtone selection and transfer mode are copied into that account's options. The migration also handles accounts created in earlier development builds of v1.2.0 that still used shared options.
 
-The existing local password encryption key remains in Android Keystore. Custom ringtone files remain in the app's storage. Device-wide settings—appearance, background reception, startup, vibration, dialpad tones, local listening ports, media encryption, DTMF signaling, LDAP and phonebook sync—stay in place. Contacts and history are retained. Migration runs once; later changes to one account's codecs, ringtone or transfer mode do not affect other accounts.
+The existing local password encryption key remains in Android Keystore. Custom ringtone files remain in the app's storage. Device-wide settings—appearance, background reception, startup, vibration, dialpad tones, local listening ports, DTMF signaling, LDAP and phonebook sync—stay in place. Contacts and history are retained. Migration runs once; later changes to one account's codecs, ringtone or transfer mode do not affect other accounts.
 
 Uninstalling the app or clearing its data is different from updating: it removes local settings and may remove the encryption key and custom audio. MDM administrators must also update their policy to the v1.2.0 `sipAccounts` schema. Old single-account policy fields are ignored, and codecs, ringtone and transfer mode now use per-account MDM keys. See the [MDM guide](MDM.md).
+
+The old shared media-encryption selection is copied once into each existing account during the v1.2.0 migration. New backups store it with SIP account settings. For an early v1.2.0 backup that still contains `network.encryption`, choose the SIP accounts category to apply that value to its included accounts; managed account encryption is still skipped. Importing only global network settings leaves account encryption unchanged and explains that omission in the result.

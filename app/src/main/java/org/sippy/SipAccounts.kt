@@ -4,9 +4,9 @@ import org.json.JSONObject
 
 internal data class SipAccountConfig(val id: String, val name: String, val profile: SipProfile, val managed: Boolean = false, val dnd: DndSettings = DndSettings(), val managedKeys: Set<String> = emptySet(), val options: AccountOptions = AccountOptions())
 
-/** Account identity, registration, transport and NAT are independent; device media settings are shared. */
+/** Identity, registration, transport, NAT and media encryption belong to each account. */
 internal object SipAccountFields {
-    val keys = setOf("username", "authUser", "password", "displayName", "domain", "server", "proxy", "realm", "transport", "register", "expiry", "stun", "ice")
+    val keys = setOf("username", "authUser", "password", "displayName", "domain", "server", "proxy", "realm", "transport", "register", "expiry", "stun", "ice", "encryption")
     fun encode(profile: SipProfile): JSONObject {
         val all = JSONObject(SipSettingsJson.encode(profile, Preferences.defaultCodecs, true)).getJSONObject("account")
         return JSONObject().apply { keys.forEach { put(it, all.get(it)) } }

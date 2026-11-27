@@ -93,6 +93,7 @@ class SipService : Service() {
     private var appliedAccounts = emptyList<SipAccountConfig>()
     private val nativeAccounts = mutableMapOf<String, Account>()
     private val registrations = mutableMapOf<String, AccountStatus>()
+    private val callEncryptions = mutableMapOf<Long, Encryption>()
     private fun selectedConfig() = appliedAccounts.firstOrNull { it.id == prefs.selectedAccount().id }
     private fun selectedName() = selectedConfig()?.name ?: prefs.selectedAccount().name
     private fun accountFor(call: Call): SipAccountConfig? {
@@ -263,13 +264,49 @@ class SipService : Service() {
 
         override fun onCallStateChanged(core: Core, call: Call, state: Call.State, message: String) {
             val id = call.nativePointer
+            // Synchronous guard: reject an SDK fallback before it can establish clear audio.
+            if (state !in setOf(Call.State.End, Call.State.Error, Call.State.Released)) {
+                val required = callEncryptions.getOrPut(id) { accountFor(call)?.profile?.encryption ?: Encryption.None }
+                val requested = MediaEncryption.valueOf(required.name)
+                val wrongOffer = required in setOf(Encryption.SRTP, Encryption.DTLS) && state == Call.State.IncomingReceived &&
+                    call.remoteParams?.mediaEncryption != requested
+                val wrongLocal = required != Encryption.None && state in setOf(Call.State.OutgoingInit, Call.State.OutgoingProgress, Call.State.Connected, Call.State.StreamsRunning) &&
+                    call.params.mediaEncryption != requested
+                if (wrongOffer || wrongLocal) {
+                    call.setMicrophoneMuted(true); call.setSpeakerMuted(true)
+                    if (state == Call.State.IncomingReceived) call.decline(Reason.NotAcceptable)
+                    else handler.post {
+                        // Do not destroy the SIP operation while the SDK is rebuilding
+                        // it for a retry. The per-call mandatory policy already blocks
+                        // clear media; stop that retry once its native callback returns.
+                        call.terminate()
+                        reconcile()
+                    }
+                    activityStore.event(EventKind.ERROR, "Call rejected: the account's required media encryption could not be negotiated.")
+                    return
+                }
+            }
             if (state == Call.State.UpdatedByRemote) call.deferUpdate()
             handler.post {
                 if (this@SipService.core?.nativePointer != core.nativePointer) return@post
-                if (state == Call.State.UpdatedByRemote) {
-                    runCatching { withAccountCodecs(accountFor(call)?.id) { call.acceptUpdate(core.createCallParams(call)) } }
-                        .onFailure { report("Could not negotiate the account's audio codecs.", EventKind.ERROR) }
+                // currentParams is finalized after the synchronous native state callback.
+                val required = callEncryptions[id]
+                if (state == Call.State.StreamsRunning && call.state == Call.State.StreamsRunning &&
+                    required in setOf(Encryption.SRTP, Encryption.DTLS) &&
+                    call.currentParams.mediaEncryption != MediaEncryption.valueOf(checkNotNull(required).name)) {
+                    call.setMicrophoneMuted(true); call.setSpeakerMuted(true); call.terminate()
+                    report("Call rejected: negotiated media encryption does not match the account.", EventKind.ERROR)
+                    reconcile()
+                    return@post
                 }
+                if (state == Call.State.UpdatedByRemote) {
+                    runCatching {
+                        val params = requireNotNull(core.createCallParams(call))
+                        CallEncryption.apply(core, params, callEncryptions[id] ?: Encryption.None)
+                        withAccountCodecs(accountFor(call)?.id) { call.acceptUpdate(params) }
+                    }.onFailure { call.terminate(); report("Could not preserve the account's media settings.", EventKind.ERROR) }
+                }
+                if (state == Call.State.Released) callEncryptions.remove(id)
                 if (dndSync?.callState(call, state) == true) { reconcile(); return@post }
                 val receiving = accountFor(call)
                 if (managedUpdatePending && receiving?.managed == true && state in setOf(Call.State.IncomingReceived, Call.State.IncomingEarlyMedia) &&
@@ -390,6 +427,7 @@ class SipService : Service() {
         core?.stop()
         core = null
         nativeAccounts.clear()
+        callEncryptions.clear()
         registrations.clear()
         managedUpdatePending = false
         managedBlocked = ManagedConfiguration.blocksConnection
@@ -432,11 +470,6 @@ class SipService : Service() {
             engine.setVideoDisplayEnabled(false)
             engine.setEchoCancellationEnabled(profile.echoCancellation)
             engine.setIpv6Enabled(profile.ipv6)
-            engine.setUseRfc2833ForDtmf(profile.dtmf == Dtmf.RTP)
-            engine.setUseInfoForDtmf(profile.dtmf == Dtmf.INFO)
-            val encryption = MediaEncryption.valueOf(profile.encryption.name)
-            require(engine.setMediaEncryption(encryption) == 0) { "Media encryption is unavailable." }
-            engine.setMediaEncryptionMandatory(encryption != MediaEncryption.None)
             val transports = engine.transports
             // -1 lets Linphone bind a random free port; 0 disables the transport.
             val port = profile.localPort.takeIf { it != 0 } ?: -1
@@ -449,6 +482,14 @@ class SipService : Service() {
             updateRingtone()
             engine.addListener(listener)
             require(engine.start() == 0) { "Could not start the SIP engine." }
+            // Core.start() reloads these defaults; apply saved/runtime policies afterward.
+            engine.setUseRfc2833ForDtmf(profile.dtmf == Dtmf.RTP)
+            engine.setUseInfoForDtmf(profile.dtmf == Dtmf.INFO)
+            // Each call receives its account's mode and required-encryption flag.
+            engine.setMediaEncryption(MediaEncryption.None)
+            // Initial incoming offers must support both clear and encrypted accounts.
+            // Required encryption is enforced on each individual offer/answer instead.
+            engine.setMediaEncryptionMandatory(false)
             engine.callLogs.forEach(::recordCall)
             val payloads = engine.audioPayloadTypes
             availableCodecs = payloads.filter { it.isUsable }.map { it.mimeType.lowercase(Locale.ROOT) }.toSet()
@@ -621,6 +662,7 @@ class SipService : Service() {
                         setVideoEnabled(false)
                         setAccount(nativeAccounts[configured.id])
                     }
+                    CallEncryption.apply(engine, params, configured.profile.encryption)
                     val call = withAccountCodecs(configured.id) { engine.inviteAddressWithParams(target, params) } ?: error("Could not start the call.")
                     launched = true
                     prefs.lastDialedNumber = raw
@@ -645,6 +687,7 @@ class SipService : Service() {
                     check(find(id) != null) { "The incoming call has ended." }
                     ensureForeground()
                     val params = requireNotNull(core?.createCallParams(incoming)).apply { setVideoEnabled(false) }
+                    CallEncryption.apply(checkNotNull(core), params, callEncryptions[id] ?: Encryption.None)
                     check(withAccountCodecs(accountFor(incoming)?.id) { incoming.acceptWithParams(params) } == 0) { "Could not answer the call." }
                     answered = true
                     selected = id

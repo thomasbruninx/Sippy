@@ -3,7 +3,6 @@
     <restriction android:key="managedConfigurationEnabled" android:title="@string/mdm_managedconfigurationenabled" android:description="@string/mdm_managedconfigurationenabled_description" android:restrictionType="bool" android:defaultValue="false" />
     <restriction android:key="localPort" android:title="@string/mdm_localport" android:description="@string/mdm_localport_description" android:restrictionType="integer" android:defaultValue="0" />
     <restriction android:key="rtpPort" android:title="@string/mdm_rtpport" android:description="@string/mdm_rtpport_description" android:restrictionType="integer" android:defaultValue="0" />
-    <restriction android:key="encryption" android:title="@string/mdm_encryption" android:description="@string/mdm_encryption_description" android:restrictionType="choice" android:defaultValue="None" android:entries="@array/mdm_encryption_labels" android:entryValues="@array/mdm_encryption_values" />
     <restriction android:key="dtmf" android:title="@string/mdm_dtmf" android:description="@string/mdm_dtmf_description" android:restrictionType="choice" android:defaultValue="RTP" android:entries="@array/mdm_dtmf_labels" android:entryValues="@array/mdm_dtmf_values" />
     <restriction android:key="echo" android:title="@string/mdm_echo" android:description="@string/mdm_echo_description" android:restrictionType="bool" android:defaultValue="true" />
     <restriction android:key="ipv6" android:title="@string/mdm_ipv6" android:description="@string/mdm_ipv6_description" android:restrictionType="bool" android:defaultValue="true" />
@@ -31,6 +30,7 @@
         <restriction android:key="sipAccount" android:title="@string/mdm_account" android:restrictionType="bundle">
             <restriction android:key="id" android:title="@string/mdm_account_id" android:restrictionType="string" />
             <restriction android:key="name" android:title="@string/mdm_account_name" android:restrictionType="string" />
+            <restriction android:key="accountEncryption" android:title="@string/mdm_encryption" android:description="@string/mdm_encryption_description" android:restrictionType="choice" android:defaultValue="None" android:entries="@array/mdm_encryption_labels" android:entryValues="@array/mdm_encryption_values" />
             <restriction android:key="accountCodecOrder" android:title="@string/mdm_codecorder" android:description="@string/mdm_codecorder_description" android:restrictionType="string" android:defaultValue="" />
             <restriction android:key="accountRingtoneUri" android:title="@string/mdm_ringtoneuri" android:description="@string/mdm_ringtoneuri_description" android:restrictionType="string" android:defaultValue="" />
             <restriction android:key="accountTransferMode" android:title="@string/mdm_transfermode" android:description="@string/mdm_transfermode_description" android:restrictionType="choice" android:defaultValue="BOTH" android:entries="@array/mdm_transfermode_labels" android:entryValues="@array/mdm_transfermode_values" />

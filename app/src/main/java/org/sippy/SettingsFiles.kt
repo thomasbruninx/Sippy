@@ -195,7 +195,7 @@ internal class SettingsFiles(private val activity: MainActivity) {
                                             activity.refreshAppearance()
                                             activity.renderPage()
                                             val completed = result.copy(notes = result.notes + followUp)
-                                            resultDialog(if (result.skipped.isEmpty() && followUp.isEmpty()) "Import successful" else "Import completed with details", completed.text())
+                                            resultDialog(if (result.skipped.isEmpty() && completed.notes.isEmpty()) "Import successful" else "Import completed with details", completed.text())
                                         } else resultDialog("Import cancelled", "A call started before settings could be applied. No settings were changed. End the call and import again.")
                                     } catch (failure: Exception) {
                                         resultDialog("Import failed", failure.message ?: "Settings could not be restored.")

@@ -312,20 +312,13 @@ internal class SettingsScreen(private val activity: MainActivity) {
     }
 
     private fun network(content: LinearLayout) = with(content) {
-        addView(activity.accountSelector())
-        addView(ui.text("Transport, STUN and ICE apply to the selected account. Device audio, encryption and listening ports are shared by all accounts. Codecs, ringtone and transfer mode belong to each account.", 13, Palette.secondary))
-        addView(heading("Network and media", "Configure transport, NAT traversal, and in-call signaling."))
-        val transports = Transport.entries
-        val transport = select("SIP transport", transports.map { it.name }, profile.transport.ordinal, managedKey = "transport")
-        val encryptions = Encryption.entries
-        val encryption = select("Media encryption", encryptions.map { it.label }, profile.encryption.ordinal, managedKey = "encryption")
+        addView(heading("Network", "Shared device controls and separate network settings for each SIP account."))
+        addView(heading("Global network settings", "These settings apply to every account. End all calls before saving; changes reconnect all accounts.", section = true))
         val modes = Dtmf.entries
         val dtmf = select("DTMF method", modes.map { it.label }, profile.dtmf.ordinal, managedKey = "dtmf")
-        val stun = addField("STUN server", profile.stun, uriType, "stun.example.com:3478", managedKey = "stun")
-        val ice = toggle("Enable ICE", profile.ice, managedKey = "ice")
         val echo = toggle("Echo cancellation", profile.echoCancellation, managedKey = "echo")
         val ipv6 = toggle("Enable IPv6", profile.ipv6, managedKey = "ipv6")
-        addView(ice); addView(echo); addView(ipv6)
+        addView(echo); addView(ipv6)
         val advanced = ui.column(12)
         advanced.visibility = View.GONE
         addView(ui.action("Local ports", "down", Palette.surface, outlined = true) {
@@ -334,11 +327,32 @@ internal class SettingsScreen(private val activity: MainActivity) {
         addView(advanced)
         val sip = advanced.addField("Local SIP port (0 for automatic)", profile.localPort.toString(), InputType.TYPE_CLASS_NUMBER, managedKey = "localPort")
         val rtp = advanced.addField("Local RTP port (0 for automatic)", profile.rtpPort.toString(), InputType.TYPE_CLASS_NUMBER, managedKey = "rtpPort")
-        addView(ui.action("Save network settings", fill = Palette.accent, tint = Palette.onAccent) {
+        addView(ui.action("Save global network settings") {
+            if (activity.sipState.lines.isNotEmpty()) { activity.message("End all calls before changing network settings."); return@action }
+            runCatching {
+                val global = SipProfile(dtmf = modes[dtmf()], echoCancellation = echo.isChecked, ipv6 = ipv6.isChecked,
+                    localPort = sip.number("SIP port"), rtpPort = rtp.number("RTP port"))
+                global.validate(requireAccount = false)
+                activity.prefs.saveGlobalNetwork(global)
+                activity.sip?.configure()
+            }.onSuccess { activity.message("Global network settings saved.") }
+                .onFailure { activity.message(it.localizedMessage ?: "Could not save global network settings.") }
+        })
+        addView(heading("Account network settings", "Transport, media encryption, STUN and ICE apply only to the account selected below.", section = true))
+        addView(activity.accountSelector())
+        val transports = Transport.entries
+        val transport = select("SIP transport", transports.map { it.name }, profile.transport.ordinal, managedKey = "transport")
+        val encryptions = Encryption.entries
+        val encryption = select("Media encryption", encryptions.map { it.label }, profile.encryption.ordinal, managedKey = "encryption")
+        addView(ui.text("Encrypted modes require their selected encryption method; a call that cannot negotiate it is rejected.", 13, Palette.secondary))
+        val stun = addField("STUN server", profile.stun, uriType, "stun.example.com:3478", managedKey = "stun")
+        val ice = toggle("Enable ICE", profile.ice, managedKey = "ice")
+        addView(ice)
+        addView(ui.action("Save account network settings") {
             saveSip(validateAccount = false) {
-                profile.copy(transport = transports[transport()], encryption = encryptions[encryption()], dtmf = modes[dtmf()],
-                    stun = stun.value(), ice = ice.isChecked, echoCancellation = echo.isChecked,
-                    ipv6 = ipv6.isChecked, localPort = sip.number("SIP port"), rtpPort = rtp.number("RTP port"))
+                // Read shared values again so saving this section cannot revert a global edit.
+                activity.prefs.profile().copy(transport = transports[transport()], encryption = encryptions[encryption()],
+                    stun = stun.value(), ice = ice.isChecked)
             }
         })
     }

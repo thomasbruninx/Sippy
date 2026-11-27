@@ -22,7 +22,7 @@ Use the `sipAccounts` bundle array to provision up to 20 named managed accounts.
 
 Each bundle contains `id`, `name`, and account settings using the following keys: `accountUsername`, `accountAuthUser`, `accountPassword`, `accountDisplayName`, `accountDomain`, `accountServer`, `accountProxy`, `accountRealm`, `accountTransport`, `accountRegister`, `accountExpiry`, `accountStun`, and `accountIce`. The types and allowed values are listed in the account-fields table below. Username and domain must form a valid SIP account before it can register. A partial account may be provisioned so the user can fill omitted settings. Supplied fields are locked; omitted fields use defaults and may be edited locally. Credentials supplied by MDM stay in the OS policy bundle and memory, are not copied into personal account storage, and cannot be included in account exports. User-supplied values for omitted fields are retained separately; user-entered passwords are encrypted.
 
-The nested keys have an `account` prefix so every key in the Android restrictions schema is unique. MDM consoles supporting bundle arrays show an account list editor. Shared device media and listening-port settings continue using top-level keys. Codecs, ringtone and transfer mode use per-account keys inside each account bundle.
+The nested keys have an `account` prefix so every key in the Android restrictions schema is unique. MDM consoles supporting bundle arrays show an account list editor. Shared DTMF, echo cancellation, IPv6 and listening-port settings continue using top-level keys; media encryption uses `accountEncryption` inside each account bundle. Codecs, ringtone and transfer mode use per-account keys inside each account bundle.
 
 The old single-account top-level keys (`username`, `authUser`, `password`, `displayName`, `domain`, `server`, `proxy`, `realm`, `transport`, `register`, `expiry`, `stun`, and `ice`) have been removed from the MDM schema and are ignored if an older console still sends them. All SIP identity, registration, transport and NAT settings must now be inside `sipAccounts`. Shared device media and listening-port settings remain at the top level. The former top-level `codecOrder`, `ringtoneUri` and `transferMode` keys are also removed; use `accountCodecOrder`, `accountRingtoneUri` and `accountTransferMode` inside each account bundle. This MDM change does not remove or change existing personal accounts or their encrypted credentials.
 
@@ -52,6 +52,7 @@ Leave **Enter extension credentials in app** off (the default) for fully provisi
 | `accountExpiry` | integer | Registration expiry, 60–86400 seconds. |
 | `accountStun` | string | STUN server, optionally with a port. |
 | `accountIce` | boolean | Enable ICE for this account. |
+| `accountEncryption` | string | Per-account media encryption: `None`, `SRTP`, `ZRTP`, `DTLS`. Encrypted modes require the selected encryption. |
 | `accountCodecOrder` | string | Comma-separated enabled codec IDs in priority order: opus, g722, pcma, pcmu, g729, amr, amr-wb. Empty leaves codecs editable. |
 | `accountRingtoneUri` | string | Empty selects the default ringtone; otherwise an accessible local `content://`, `android.resource://` or `file://` URI. |
 | `accountTransferMode` | string | `DIRECT_ONLY`, `ATTENDED_ONLY`, or `BOTH`. |
@@ -71,7 +72,6 @@ See [mdm-accounts-example.json](mdm-accounts-example.json) for two managed serve
 | `doNotDisturb` | boolean | Automatically decline incoming calls in Sippy. |
 | `localPort` | integer | 0–65535; 0 means automatic. |
 | `rtpPort` | integer | 0–65534; 0 means automatic. |
-| `encryption` | string | `None`, `SRTP`, `ZRTP`, `DTLS` |
 | `dtmf` | string | `RTP`, `INFO` |
 | `echo` | boolean | Echo cancellation. |
 | `ipv6` | boolean | Enable IPv6. |
@@ -119,3 +119,9 @@ For example (the JSON `\n` sequences become real line breaks in the managed stri
 CSV accepts the same name/number columns, quoting and delimiters as file imports. Inline content is limited to 65,536 UTF-8 bytes to keep managed payloads small; an MDM console may impose a smaller limit. Use a hosted URL for larger directories. Inline managed contacts replace file-imported contacts, remain separate from Local/Phone/Synced contacts, are excluded from local-contact export and settings backup, and available immediately without waiting for a network sync. They disappear when their policy is removed.
 
 The in-app factory reset clears editable local configuration, local extension credentials for managed templates and local contact/history/log data. It does not remove the OS-managed policy or inline contacts. Locked settings remain enforced; managed hosted directories can sync again. See [Troubleshooting and factory reset](USAGE.md#troubleshooting-and-factory-reset).
+
+### Media encryption policy migration
+
+Set `accountEncryption` inside each `sipAccounts` entry; omit it to let users edit encryption for that account. A supplied value is locked, enforced for calls on that account and skipped by settings imports. DTMF remains the top-level `dtmf` setting and applies to all accounts.
+
+Remove the former top-level `encryption` key. A managed policy still containing that key is rejected with an instruction to use `sipAccounts.accountEncryption`, so an old security requirement cannot silently be discarded. A running app retains its last valid policy; cold startup blocks SIP reception until an invalid policy is corrected.

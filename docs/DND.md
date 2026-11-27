@@ -6,7 +6,7 @@ DND keeps accounts registered and automatically rejects new incoming calls to th
 
 ## DND behaviour settings
 
-Open **Settings → DND behaviour** (immediately after Network in the settings dropdown) and select an account. Use **Save DND behaviour** to apply changes. These settings are separate from device audio settings. Codec order, ringtone and transfer mode are also account-specific.
+Open **Settings → DND behaviour** (immediately after Network in the settings dropdown) and select an account. Use **Save DND behaviour** to apply changes. These settings are separate from device audio settings. Media encryption, codec order, ringtone and transfer mode are also account-specific. DTMF method remains global.
 
 | Setting | Default | Behaviour |
 | --- | --- | --- |

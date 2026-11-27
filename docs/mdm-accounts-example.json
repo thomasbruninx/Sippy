@@ -11,7 +11,8 @@
       "accountRegister": true,
       "accountCodecOrder": "opus,g722,pcma,pcmu",
       "accountTransferMode": "BOTH",
-      "accountRingtoneUri": ""
+      "accountRingtoneUri": "",
+      "accountEncryption": "None"
     },
     {
       "id": "support",
@@ -20,7 +21,8 @@
       "accountDomain": "support.example.com",
       "accountServer": "registrar.support.example.com:5061",
       "accountTransport": "TLS",
-      "accountRegister": true
+      "accountRegister": true,
+      "accountEncryption": "None"
     }
   ],
   "backgroundCalling": true,

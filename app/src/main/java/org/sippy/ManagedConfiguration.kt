@@ -76,6 +76,7 @@ internal object ManagedConfiguration {
     private class Invalid(val field: String) : IllegalArgumentException()
     @Suppress("DEPRECATION")
     private fun decode(context: Context, bundle: Bundle): Map<String, Any?> {
+        if (bundle.containsKey("encryption")) throw Invalid("use sipAccounts.accountEncryption instead of encryption")
         val result = mutableMapOf<String, Any?>()
         for ((key, type) in types) if (bundle.containsKey(key)) {
             val value = bundle.get(key)
@@ -146,7 +147,6 @@ internal object ManagedConfiguration {
         fun enum(key: String, choices: List<String>) {
             if (result.containsKey(key) && result[key] !in choices) throw Invalid(key)
         }
-        enum("encryption", Encryption.entries.map { it.name })
         enum("dtmf", Dtmf.entries.map { it.name }); enum("appearance", Appearance.entries.map { it.name })
 
         fun range(key: String, bounds: IntRange) { if (key in result && result[key] !in bounds) throw Invalid(key) }
@@ -203,13 +203,13 @@ internal object ManagedConfiguration {
         "expiry" to Int::class.javaObjectType,
         "stun" to String::class.javaObjectType,
         "ice" to Boolean::class.javaObjectType,
+        "encryption" to String::class.javaObjectType,
     )
 
     private val types: Map<String, Class<*>> = mapOf(
         "doNotDisturb" to Boolean::class.javaObjectType,
         "localPort" to Int::class.javaObjectType,
         "rtpPort" to Int::class.javaObjectType,
-        "encryption" to String::class.javaObjectType,
         "dtmf" to String::class.javaObjectType,
         "echo" to Boolean::class.javaObjectType,
         "ipv6" to Boolean::class.javaObjectType,

@@ -44,6 +44,7 @@ internal class ManagedConfigurationChecks(private val instrumentation: Instrumen
         val schema = context.getSystemService(RestrictionsManager::class.java).getManifestRestrictions(context.packageName)
         check(schema.any { it.key == "managedConfigurationEnabled" } && schema.any { it.key == "sipAccounts" } && schema.none { it.key in SipAccountFields.keys }) { "MDM schema was not discoverable from the APK" }
         check(schema.first { it.key == "sipAccounts" }.restrictions.first().restrictions.first { it.key == "accountTransferMode" }.choiceValues.toList() == listOf("DIRECT_ONLY", "ATTENDED_ONLY", "BOTH"))
+        check(schema.first { it.key == "sipAccounts" }.restrictions.first().restrictions.any { it.key == "accountEncryption" })
         check(schema.any { it.key == "csvContent" })
         check(Directory(context).stored(Source.CSV).map { it.number } == listOf("401", "402")) { "OS-managed CSV was not applied at startup" }
         val raw = Preferences(context, useManaged = false)
@@ -56,6 +57,7 @@ internal class ManagedConfigurationChecks(private val instrumentation: Instrumen
             val prefs = activity.prefs
             check(prefs.profile().username == "managed200" && prefs.profile().password == "MDM_FIXTURE_SECRET")
             check(prefs.transferMode == TransferMode.ATTENDED_ONLY && prefs.codecs().take(2).map { it.id } == listOf("pcmu", "opus"))
+            check(prefs.isManaged("encryption") && prefs.profile().encryption == Encryption.None)
             main {
                 activity.settingsTab = 0; activity.openLdapSettings()
                 val fields = views(activity.window.decorView).filterIsInstance<EditText>()
@@ -145,6 +147,9 @@ internal class ManagedConfigurationChecks(private val instrumentation: Instrumen
             main {
                 service.selectAccount("managed:office")
                 check(prefs.profile().username == "mdm300" && prefs.isManaged("password"))
+                check(prefs.profile().encryption == Encryption.SRTP && prefs.isManaged("encryption"))
+                prefs.save(prefs.profile().copy(encryption = Encryption.None))
+                check(prefs.profile().encryption == Encryption.SRTP)
                 check(prefs.isManaged("dndShow") && prefs.isManaged("dndReasonHeader"))
                 prefs.saveDnd(DndSettings(show = false, reasonHeader = false, serverSync = DndServerSync.FAC))
                 check(prefs.selectedAccount().dnd.show && prefs.selectedAccount().dnd.reasonHeader && prefs.selectedAccount().dnd.serverSync == DndServerSync.DISABLED)

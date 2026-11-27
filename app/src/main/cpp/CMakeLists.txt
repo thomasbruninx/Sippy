@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(sippy_media C)
+add_library(sippy_media SHARED call_encryption.c)
+target_link_libraries(sippy_media dl)
+target_compile_options(sippy_media PRIVATE -Wall -Wextra -Werror)

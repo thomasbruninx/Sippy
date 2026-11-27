@@ -11,7 +11,8 @@
       "accountRegister": true,
       "accountCodecOrder": "opus,g722,pcma,pcmu",
       "accountTransferMode": "BOTH",
-      "accountRingtoneUri": ""
+      "accountRingtoneUri": "",
+      "accountEncryption": "None"
     }
   ],
   "backgroundCalling": true,

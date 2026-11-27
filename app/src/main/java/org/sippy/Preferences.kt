@@ -137,6 +137,21 @@ internal class Preferences(private val context: Context, private val useManaged:
         @Suppress("UNCHECKED_CAST")
         val managed = if (useManaged) ManagedConfiguration.values["sipAccounts"] as? List<SipAccountConfig> ?: emptyList() else emptyList()
         val stored = localAccounts()
+        if (!local.getBoolean("accountEncryptionMigrated", false)) {
+            val legacy = Encryption.valueOf(local.getString("encryption", "None")!!)
+            for (i in 0 until stored.length()) {
+                val fields = stored.getJSONObject(i).getJSONObject("fields")
+                if (!fields.has("encryption")) fields.put("encryption", legacy.name)
+            }
+            val overrides = accountOverrides()
+            managed.filter { "encryption" !in it.managedKeys }.forEach { account ->
+                val fields = overrides.optJSONObject(account.id) ?: JSONObject()
+                if (!fields.has("encryption")) fields.put("encryption", legacy.name)
+                overrides.put(account.id, fields)
+            }
+            check(local.edit().putString("sipAccountsLocal", stored.toString()).putString("sipAccountOverrides", overrides.toString())
+                .putBoolean("accountEncryptionMigrated", true).commit()) { "Could not migrate account media encryption." }
+        }
         val overrideJson = accountOverrides()
         val cacheKey = listOf(stored.toString(), shared, managed, overrideJson.toString())
         if (cacheKey == accountCacheKey) return accountCache
@@ -353,10 +368,15 @@ internal class Preferences(private val context: Context, private val useManaged:
             .putString("proxy", profile.proxy).putString("realm", profile.realm)
             .putString("transport", profile.transport.name).putBoolean("register", profile.register)
             .putInt("expiry", profile.expiry).putString("stun", profile.stun).putBoolean("ice", profile.ice)
-        editor.putInt("localPort", profile.localPort)
-            .putInt("rtpPort", profile.rtpPort).putString("encryption", profile.encryption.name)
+        editor.apply()
+        saveGlobalNetwork(profile)
+    }
+
+    fun saveGlobalNetwork(profile: SipProfile) {
+        require(profile.localPort in 0..65535 && profile.rtpPort in 0..65534) { "Enter valid local SIP and RTP ports." }
+        check(data.edit().putInt("localPort", profile.localPort).putInt("rtpPort", profile.rtpPort)
             .putString("dtmf", profile.dtmf.name).putBoolean("echo", profile.echoCancellation)
-            .putBoolean("ipv6", profile.ipv6).apply()
+            .putBoolean("ipv6", profile.ipv6).commit()) { "Could not save global network settings." }
     }
 
     var ldapEnabled: Boolean

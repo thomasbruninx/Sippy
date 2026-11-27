@@ -9,7 +9,7 @@ import org.json.JSONObject
 import java.io.File
 
 internal enum class BackupSection(val label: String) {
-    ACCOUNTS("SIP accounts and outgoing selection"), CODECS("Account audio codecs"), RINGTONES("Account ringtones (including custom audio)"),
+    ACCOUNTS("SIP accounts, media encryption and outgoing selection"), CODECS("Account audio codecs"), RINGTONES("Account ringtones (including custom audio)"),
     TRANSFERS("Account transfer modes"), DND("Account DND behaviour and state"), NETWORK("Device network and media settings"),
     SOUNDS("Device sounds and vibration"), APPLICATION("Application settings"), PHONEBOOK("Phonebook sync settings"), LDAP("LDAP settings"),
     PASSWORDS("Passwords (readable in the backup; managed passwords excluded)")
@@ -29,7 +29,7 @@ internal class SettingsBackup(private val context: Context, private val prefs: P
         const val MAX_BYTES = 128 * 1024 * 1024
         private const val AUDIO_LIMIT = 20 * 1024 * 1024
         val groups: Map<BackupSection, Map<String, Any>> = linkedMapOf(
-            BackupSection.NETWORK to linkedMapOf("localPort" to 0, "rtpPort" to 0, "encryption" to "None", "dtmf" to "RTP", "echo" to true, "ipv6" to true),
+            BackupSection.NETWORK to linkedMapOf("localPort" to 0, "rtpPort" to 0, "dtmf" to "RTP", "echo" to true, "ipv6" to true),
             BackupSection.SOUNDS to linkedMapOf("dialpadTones" to true, "vibrateOnIncoming" to false),
             BackupSection.APPLICATION to linkedMapOf("appearance" to "SYSTEM", "backgroundCalling" to true, "startOnBoot" to true, "eventRetentionDays" to 3),
             BackupSection.PHONEBOOK to linkedMapOf("csvUrl" to "", "csvInterval" to 60),
@@ -53,7 +53,7 @@ internal class SettingsBackup(private val context: Context, private val prefs: P
             if (account.has("password")) sections.add(BackupSection.PASSWORDS)
             val record = JSONObject().put("id", "legacy-import").put("name", old.name ?: "Imported account").put("managed", false)
                 .put("account", account).put("codecs", AccountOptions.codecJson(old.codecs)).put("dnd", old.dnd.json())
-            val network = JSONObject().put("localPort", old.profile.localPort).put("rtpPort", old.profile.rtpPort).put("encryption", old.profile.encryption.name)
+            val network = JSONObject().put("localPort", old.profile.localPort).put("rtpPort", old.profile.rtpPort)
                 .put("dtmf", old.profile.dtmf.name).put("echo", old.profile.echoCancellation).put("ipv6", old.profile.ipv6)
             return JSONObject().put("format", "sippy-settings-backup").put("version", 2).put("sections", JSONArray(sections.map { it.name }))
                 .put("accounts", JSONArray().put(record)).put("selectedAccountId", "legacy-import").put("network", network).put("legacy", true)
@@ -146,7 +146,16 @@ internal class SettingsBackup(private val context: Context, private val prefs: P
         return BackupExport(root, notes)
     }
 
-    fun restore(root: JSONObject, sections: Set<BackupSection>): BackupReport {
+    fun restore(source: JSONObject, sections: Set<BackupSection>): BackupReport {
+        val root = JSONObject(source.toString())
+        // Early v1.2.0 backups stored encryption globally. Move it into each
+        // included account before field-level MDM validation, without overriding newer values.
+        val legacyEncryption = root.optJSONObject("network")?.opt("encryption")
+        if (legacyEncryption != null) root.optJSONArray("accounts")?.let { records ->
+            for (i in 0 until records.length()) records.getJSONObject(i).optJSONObject("account")?.let { account ->
+                if (!account.has("encryption")) account.put("encryption", legacyEncryption)
+            }
+        }
         val available = available(root)
         require(sections.all { it in available } && sections.any { it != BackupSection.PASSWORDS }) { "Select at least one available settings category." }
         val original = prefs.localSnapshot()
@@ -154,6 +163,8 @@ internal class SettingsBackup(private val context: Context, private val prefs: P
         val createdFiles = mutableListOf<File>()
         val skipped = mutableListOf<String>()
         val notes = mutableListOf<String>()
+        if (legacyEncryption != null && BackupSection.NETWORK in sections && BackupSection.ACCOUNTS !in sections)
+            notes.add("Legacy shared media encryption was skipped. Select SIP accounts to restore it per account.")
         var applied = 0
         var stage = "backup structure"
         try {
@@ -265,7 +276,7 @@ internal class SettingsBackup(private val context: Context, private val prefs: P
                 fun num(key: String, fallback: Int) = if (allowed.has(key)) allowed.getInt(key) else prefs.data.getInt(key, fallback)
                 if (section == BackupSection.NETWORK) {
                     require(num("localPort", 0) in 0..65535 && num("rtpPort", 0) in 0..65534) { "Invalid local SIP/RTP port." }
-                    Encryption.valueOf(str("encryption", "None")); Dtmf.valueOf(str("dtmf", "RTP"))
+                    Dtmf.valueOf(str("dtmf", "RTP"))
                 }
                 if (section == BackupSection.APPLICATION) {
                     Appearance.valueOf(str("appearance", "SYSTEM")); require(num("eventRetentionDays", 3) in 1..30) { "Invalid event log retention." }

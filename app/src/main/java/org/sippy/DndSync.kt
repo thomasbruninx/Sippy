@@ -207,6 +207,7 @@ internal class DndSync(
         val params = requireNotNull(core.createCallParams(null)).apply {
             setAccount(s.account); setVideoEnabled(false); setAudioDirection(MediaDirection.Inactive)
         }
+        CallEncryption.apply(core, params, s.config.profile.encryption)
         val call = requireNotNull(core.inviteAddressWithParams(target, params)) { "FAC INVITE could not be started" }
         technicalCalls.add(call.nativePointer)
         s.facCall = call

@@ -32,6 +32,7 @@ public class ManagedTestAdminActivity extends Activity {
                 policy.remove(key);
             }
             primary.putBoolean("accountRegister", false); policy.remove("register");
+            primary.putString("accountEncryption", "None");
             if ("invalid_type".equals(mode)) { policy.remove("expiry"); primary.putString("accountExpiry", "600"); }
             policy.putParcelableArray("sipAccounts", new Bundle[] {primary});
             if ("pending".equals(mode)) { policy.clear(); policy.putBoolean("restrictions_pending", true); }
@@ -45,6 +46,7 @@ public class ManagedTestAdminActivity extends Activity {
             office.putString("accountUsername", "mdm300"); office.putString("accountDomain", "127.0.0.1");
             office.putString("accountPassword", "MDM_MULTI_OFFICE_SECRET"); office.putBoolean("accountRegister", false);
             office.putBoolean("accountDndShow", true); office.putBoolean("accountDndReasonHeader", true);
+            office.putString("accountEncryption", "SRTP");
             office.putString("accountDndServerSync", "accounts_invalid".equals(mode) ? "INVALID" : "DISABLED");
             Bundle support = new Bundle();
             support.putString("id", "support"); support.putString("name", "MDM Support");
